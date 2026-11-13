@@ -1,8 +1,8 @@
 // Offline cache. Bump VERSION on every deploy so phones pick up the new files.
-const VERSION = 'ff-v8';
+const VERSION = 'ff-v9';
 const FB = '13.1.0'; // keep in sync with FB_VERSION in sync.js
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'logic.js', 'store.js', 'data.js',
-  'config.js', 'sync.js', 'syncplan.js', 'clean.js',
+  'config.js', 'sync.js', 'syncplan.js', 'clean.js', 'pin.js',
   'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
   ...['app', 'auth', 'firestore'].map((m) => `https://www.gstatic.com/firebasejs/${FB}/firebase-${m}.js`),
   'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js'];

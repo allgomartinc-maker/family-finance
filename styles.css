@@ -161,3 +161,9 @@ input.name { width: 100%; font: inherit; font-size: 22px; padding: 12px 14px; bo
 .item .claim { width: 54px; height: 54px; }
 .item .qty { min-width: 30px; }
 html, body { overflow-x: hidden; }
+
+/* picture PIN */
+.keys.pin button { font-size: 40px; height: 84px; }
+.keys button:disabled { opacity: .35; }
+.shake { animation: shake .35s; color: var(--out); }
+@keyframes shake { 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }

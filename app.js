@@ -5,6 +5,7 @@ import {
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
+import { makePin, checkPin, PIN_LEN, PIN_ICONS } from './pin.js';
 
 let S;                                   // family state (IndexedDB)
 const V = { tab: 'grocery', gmode: 'add', gfilter: 'all', edit: false, month: null, modal: null, cloud: null, waiting: false };
@@ -218,7 +219,7 @@ function reportView() {
 
 // ---------- modals ----------
 const sheet = (head, body) => `<div class="sheet-bg" data-a="closeBg"><div class="sheet">
-  <div class="head">${S.members.length ? '<button class="iconbtn" data-a="close">✖</button>' : '<span style="width:56px"></span>'}<span class="t">${head}</span><span style="width:56px"></span></div>
+  <div class="head">${S.members.length && !V.modal?.required ? '<button class="iconbtn" data-a="close">✖</button>' : '<span style="width:56px"></span>'}<span class="t">${head}</span><span style="width:56px"></span></div>
   ${body}</div></div>`;
 
 const keypad = (val, cur) => `
@@ -252,9 +253,21 @@ function modalView() {
     case 'people':
       return sheet('👨‍👩‍👧', `<div class="list">${S.members.filter((m) => !m.deleted).map((m) => `
         <div class="item">${face(m, 'f56')}<span class="grow">${esc(m.name)} ${m.role === 'admin' ? '👑' : ''}</span>
+          ${m.id !== S.me && m.role === 'admin' && m.pin ? `<button class="round" data-a="pinReset" data-v="${m.id}">🔒↩️</button>` : ''}
           ${m.id === S.me ? '' : `<button class="round" data-a="rmMember" data-v="${m.id}">🗑️</button>`}</div>`).join('')}</div>
         <button class="save" data-a="newMember">➕👤</button>
         ${SY ? '<button class="save" style="background:var(--sel)" data-a="invite">📲</button>' : ''}`);
+    case 'pin': {
+      const locked = Date.now() < pinLockUntil;
+      const head = { set: '🔒➕', confirm: '🔒🔁', check: '🔒' }[M.mode];
+      const dots = Array.from({ length: PIN_LEN }, (_, i) => (i < M.seq.length ? '●' : '○')).join(' ');
+      return sheet(head, `
+        <div class="display ${M.shake ? 'shake' : ''}" style="letter-spacing:8px">${locked ? '⏳' : dots}</div>
+        <div class="keys pin">${PIN_ICONS.map((ic, i) =>
+          `<button data-a="pinTap" data-v="${i}" ${locked ? 'disabled' : ''}>${ic}</button>`).join('')}</div>
+        <div class="row" style="justify-content:center;margin-top:10px">
+          <button class="iconbtn" data-a="pinBack">⌫</button></div>`);
+    }
     case 'invite':
       return sheet('📲', `<div class="card" style="display:grid;justify-items:center">
           <div id="qr" style="width:260px;height:260px;display:grid;place-items:center">⏳</div></div>
@@ -376,11 +389,66 @@ async function toggleVoice() {
 }
 
 // ---------- actions ----------
+// ---------- admin PIN ----------
+// Admin screens (report, people, editing lists, deleting others' entries) need the picture PIN.
+// Unlocked for 10 minutes, and locked again as soon as the app goes to the background.
+let unlockedUntil = 0, pinFails = 0, pinLockUntil = 0;
+function requireAdmin(run) {
+  if (!isAdmin()) { toast('👑❌'); return; }
+  if (Date.now() < unlockedUntil) { run(); return; }
+  V.modal = { kind: 'pin', mode: me().pin ? 'check' : 'set', seq: [], run };
+  render();
+}
+function unlock(M) {
+  unlockedUntil = Date.now() + 10 * 60 * 1000;
+  pinFails = 0;
+  V.modal = null;
+  if (M.run) M.run(); else render();
+}
+async function pinTap(i) {
+  const M = V.modal;
+  if (!M || M.kind !== 'pin' || M.busy || Date.now() < pinLockUntil || M.seq.length >= PIN_LEN) return;
+  M.seq.push(i); M.shake = false;
+  navigator.vibrate?.(15);
+  render();
+  if (M.seq.length < PIN_LEN) return;
+  M.busy = true;
+  const seq = M.seq; M.seq = [];
+  if (M.mode === 'set') { M.first = seq; M.mode = 'confirm'; M.busy = false; render(); return; }
+  if (M.mode === 'confirm') {
+    if (seq.join() !== M.first.join()) { toast('🔁❌'); Object.assign(M, { mode: 'set', first: null, shake: true, busy: false }); render(); return; }
+    const pin = await makePin(seq);
+    await commit(() => { me().pin = pin; log('pinSet', '🔒✅', me().name); });
+    toast('🔒✅');
+    unlock(M);
+    return;
+  }
+  if (await checkPin(seq, me().pin)) { unlock(M); return; }
+  pinFails += 1;
+  if (pinFails >= 5) { pinLockUntil = Date.now() + 60 * 1000; pinFails = 0; setTimeout(render, 60 * 1000 + 50); }
+  Object.assign(M, { shake: true, busy: false });
+  navigator.vibrate?.([60, 40, 60]);
+  render();
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  unlockedUntil = 0;
+  if (V.tab === 'report' || V.edit) { V.tab = V.tab === 'report' ? 'grocery' : V.tab; V.edit = false; render(); }
+});
+
 const A = {
-  tab: (v) => { V.tab = v; V.edit = false; render(); },
+  tab: (v) => {
+    const go = () => { V.tab = v; V.edit = false; V.modal = null; render(); };
+    if (v === 'report') requireAdmin(go); else go();
+  },
   who: () => { V.modal = { kind: 'who' }; render(); },
-  iam: (v) => { S.me = v; localStorage.setItem('ff-me', v); V.modal = null; if (!isAdmin() && V.tab === 'report') V.tab = 'grocery'; commit(() => {}); },
-  people: () => { V.modal = { kind: 'people' }; render(); },
+  iam: (v) => { unlockedUntil = 0; S.me = v; localStorage.setItem('ff-me', v); V.modal = null; if (!isAdmin() && V.tab === 'report') V.tab = 'grocery'; commit(() => {}); },
+  people: () => requireAdmin(() => { V.modal = { kind: 'people' }; render(); }),
+  pinReset: (v) => requireAdmin(() => commit(() => {
+    member(v).pin = null; log('pinReset', '🔒↩️', member(v).name); V.modal = { kind: 'people' };
+  })),
+  pinTap: (v) => pinTap(+v),
+  pinBack: () => { V.modal.seq.pop(); render(); },
   newSelf: () => { V.modal = { kind: 'member', role: 'member', self: true }; render(); },
   invite: () => { V.modal = { kind: 'invite' }; render(); },
   shareLink: () => navigator.share?.({ title: 'حساب خانواده', url: SY.inviteLink() }).catch(() => {}),
@@ -398,7 +466,7 @@ const A = {
       S.members.push(m);
       if (setup || M.self) { S.me = m.id; localStorage.setItem('ff-me', m.id); }
       log('addMember', '👤➕', m.name);
-      V.modal = setup || M.self ? null : { kind: 'people' };
+      V.modal = setup ? { kind: 'pin', mode: 'set', seq: [], run: null, required: true } : M.self ? null : { kind: 'people' };
     });
   },
 
@@ -425,7 +493,7 @@ const A = {
     log('gbought', '✅', itemOf(x.item)?.name);
   }),
   gundo: (v) => commit(() => { const x = S.grocery.find((g) => g.id === v); x.bought = false; }),
-  editCat: () => { V.edit = !V.edit; render(); },
+  editCat: () => (V.edit ? (V.edit = false, render()) : requireAdmin(() => { V.edit = true; V.modal = null; render(); })),
   rmItem: (v) => commit(() => { log('rmItem', '🛒🗑️', itemOf(v)?.name); S.catalog = S.catalog.filter((c) => c.id !== v); }),
   newItem: () => { V.modal = { kind: 'item' }; render(); },
   iemoji: (v) => { keepName('iname'); V.modal.icon = v; V.modal.photo = null; render(); },
@@ -464,18 +532,23 @@ const A = {
     toast(M.type === 'in' ? '⬇️✅' : '⬆️✅');
   },
   txView: (v) => { V.modal = { kind: 'txView', id: v }; render(); },
-  txDel: () => commit(() => {
+  txDel: () => {
     const x = S.txns.find((t) => t.id === V.modal.id);
-    x.deleted = true; x.deletedBy = S.me;
-    log('txDel', '🗑️' + catOf(x.type, x.cat).icon, money(x.amount, x.currency));
-    V.modal = null;
-  }),
-  txRestore: () => commit(() => {
+    const del = () => commit(() => {
+      x.deleted = true; x.deletedBy = S.me;
+      log('txDel', '🗑️' + catOf(x.type, x.cat).icon, money(x.amount, x.currency));
+      V.modal = null;
+    });
+    if (x.by === S.me) del(); else requireAdmin(del); // deleting someone else's entry needs the PIN
+  },
+  txRestore: () => {
     const x = S.txns.find((t) => t.id === V.modal.id);
-    x.deleted = false;
-    log('txRestore', '↩️' + catOf(x.type, x.cat).icon, money(x.amount, x.currency));
-    V.modal = null;
-  }),
+    requireAdmin(() => commit(() => {
+      x.deleted = false;
+      log('txRestore', '↩️' + catOf(x.type, x.cat).icon, money(x.amount, x.currency));
+      V.modal = null;
+    }));
+  },
 
   payBill: (v) => {
     const b = S.bills.find((x) => x.id === v);
@@ -498,7 +571,7 @@ const A = {
     a.download = `family-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
   },
-  close: () => { if (S.members.length) { V.modal = null; render(); } },
+  close: () => { if (S.members.length && !V.modal?.required) { V.modal = null; render(); } },
   closeBg: (v, el, e) => { if (e.target === el) A.close(); },
 };
 

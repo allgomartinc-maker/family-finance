@@ -54,3 +54,11 @@ test('normal records pass through unchanged', () => {
   const t = { id: 't1', type: 'out', cat: 'food', amount: 750, currency: 'AFN', by: 'm1', ts: 5, photo: null, voice: null, billId: null };
   assert.deepEqual(cleanRecord('txns', t), t);
 });
+
+test('member pin: valid salt/hash kept, anything else removed', () => {
+  const pin = { salt: 'a'.repeat(32), hash: 'b'.repeat(64) };
+  assert.deepEqual(cleanRecord('members', { id: 'm1', role: 'admin', pin }).pin, pin);
+  assert.equal(cleanRecord('members', { id: 'm1', pin: { salt: '<x>', hash: 'b'.repeat(64) } }).pin, null);
+  assert.equal(cleanRecord('members', { id: 'm1', pin: 'abc' }).pin, null);
+  assert.deepEqual(cleanRecord('members', { id: 'm1', pin: { ...pin, extra: '<script>' } }).pin, pin);
+});

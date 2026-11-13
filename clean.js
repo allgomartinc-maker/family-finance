@@ -37,5 +37,10 @@ export function cleanRecord(coll, rec) {
   }
   if (coll === 'bills' && !isId(r.kind)) return null;
   if (coll === 'members' && has('role') && r.role !== 'admin') r.role = 'member';
+  if (has('pin')) {
+    const p = r.pin;
+    r.pin = p && typeof p === 'object' && /^[0-9a-f]{32}$/.test(p.salt) && /^[0-9a-f]{64}$/.test(p.hash)
+      ? { salt: p.salt, hash: p.hash } : null;
+  }
   return r;
 }
