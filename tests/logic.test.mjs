@@ -207,3 +207,54 @@ test('abroadSummary: money from abroad this month, fees, by sender', () => {
   ];
   assert.deepEqual(abroadSummary(tx, 'AFN', '1405-08'), { total: 35000, fees: 500, bySender: { son: 30000, bro: 5000 } });
 });
+
+// ---------- Phase 3 ----------
+import { nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance } from '../logic.js';
+
+test('pantry level cycles: not tracked → full → half → empty → not tracked', () => {
+  assert.equal(nextLevel(undefined), 'full');
+  assert.equal(nextLevel(null), 'full');
+  assert.equal(nextLevel('full'), 'half');
+  assert.equal(nextLevel('half'), 'empty');
+  assert.equal(nextLevel('empty'), null);
+});
+
+test('pantry order: empty first, then half, full, untracked; keeps catalog order inside', () => {
+  const c = [{ id: 'a' }, { id: 'b', stock: 'full' }, { id: 'c', stock: 'empty' }, { id: 'd', stock: 'half' }, { id: 'e', stock: 'empty' }];
+  assert.deepEqual(pantryOrder(c).map((x) => x.id), ['c', 'e', 'd', 'b', 'a']);
+});
+
+test('monthCompare: spending per category this month vs last month, biggest first', () => {
+  const t = (cat, amount, d) => ({ type: 'out', cat, amount, currency: 'AFN', ts: Date.parse(d + 'T12:00') });
+  const tx = [t('food', 8000, '2026-11-05'), t('food', 6000, '2026-10-10'), t('power', 1000, '2026-11-02'),
+    t('power', 1500, '2026-10-02'), t('health', 500, '2026-10-05')];
+  assert.deepEqual(monthCompare(tx, 'AFN', '1405-08'), [
+    { cat: 'food', now: 8000, prev: 6000 },
+    { cat: 'power', now: 1000, prev: 1500 },
+    { cat: 'health', now: 0, prev: 500 },
+  ]);
+});
+
+test('jarsMonthNet: money put in minus taken out of jars this month', () => {
+  const j = [
+    { kind: 'jar', id: 'J1', currency: 'AFN' }, { kind: 'jar', id: 'J2', currency: 'USD' },
+    { kind: 'move', jarId: 'J1', amount: 5000, ts: Date.parse('2026-11-03T12:00') },
+    { kind: 'move', jarId: 'J1', amount: -1000, ts: Date.parse('2026-11-04T12:00') },
+    { kind: 'move', jarId: 'J1', amount: 9999, ts: Date.parse('2026-10-01T12:00') },
+    { kind: 'move', jarId: 'J2', amount: 50, ts: Date.parse('2026-11-04T12:00') },
+  ];
+  assert.equal(jarsMonthNet(j, 'AFN', '1405-08'), 4000);
+});
+
+test('billsMonth: how many bills are paid / late now', () => {
+  const bills = [{ id: 'b1', dueDay: 5 }, { id: 'b2', dueDay: 10 }, { id: 'b3', dueDay: 30 }, { id: 'b4', dueDay: 1, deleted: true }];
+  const tx = [{ billId: 'b1', ts: Date.parse('2026-11-01T12:00') }];
+  assert.deepEqual(billsMonth(bills, tx, Date.parse('2026-11-13T12:00')), { total: 3, paid: 1, late: 1 });
+});
+
+test('pocketBalance per currency, ignores deleted', () => {
+  const e = [{ type: 'in', amount: 3000, currency: 'AFN' }, { type: 'out', amount: 500, currency: 'AFN' },
+    { type: 'out', amount: 100, currency: 'AFN', deleted: true }, { type: 'in', amount: 20, currency: 'USD' }];
+  assert.equal(pocketBalance(e, 'AFN'), 2500);
+  assert.equal(pocketBalance(e, 'USD'), 20);
+});

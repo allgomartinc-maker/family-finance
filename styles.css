@@ -197,3 +197,15 @@ button.lp { font-size: 15px; font-weight: 700; color: var(--out); }
 .jar.add .glass { border-style: dashed; border-color: var(--line); background: transparent; }
 .tx.del2 { opacity: .5; }
 .tx .cat small { font-size: 16px; }
+
+/* Phase 3: pantry, pocket, family summary */
+.tile.lvl-full { border-color: var(--in); }
+.tile.lvl-half { border-color: var(--due); background: var(--due-bg); }
+.tile.lvl-empty { border-color: var(--out); background: var(--out-bg); }
+.tile.lvl-none { opacity: .55; }
+.badge.lvl { background: #fff; box-shadow: 0 1px 3px #0003; font-size: 18px; }
+.top .iconbtn[data-a="pocket"] { width: 48px; height: 48px; font-size: 26px; }
+.slide { min-height: 300px; display: grid; align-content: center; gap: 14px; }
+.slide-t { text-align: center; font-size: 34px; font-weight: 700; }
+.slide-big { text-align: center; font-size: 34px; font-weight: 700; }
+.iconbtn:disabled { opacity: .3; }

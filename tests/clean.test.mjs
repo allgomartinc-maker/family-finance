@@ -108,3 +108,10 @@ test('abroad income: fee number, country from list, sender id', () => {
   assert.equal(t.fee, 300); assert.equal(t.country, 'ir'); assert.equal(t.from, 'son1');
   assert.equal(cleanRecord('txns', { id: 't1', type: 'in', amount: 1, country: 'xx"' }).country, null);
 });
+
+test('pantry level on catalog: full/half/empty or null', () => {
+  assert.equal(cleanRecord('catalog', { id: 'rice', stock: 'half', stockBy: 'm1', stockTs: '5' }).stock, 'half');
+  assert.equal(cleanRecord('catalog', { id: 'rice', stock: 'lots<' }).stock, null);
+  assert.equal(cleanRecord('catalog', { id: 'rice', stockTs: '5' }).stockTs, 5);
+  assert.equal(cleanRecord('catalog', { id: 'rice', stockBy: '"x' }).stockBy, null);
+});

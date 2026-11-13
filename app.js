@@ -1,8 +1,9 @@
-import { load, save, uid } from './store.js';
+import { load, save, uid, loadPocket, savePocket } from './store.js';
 import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, COUNTRIES } from './data.js';
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -77,6 +78,7 @@ function top() {
   const title = { grocery: '🛒', money: '💰', loans: '🤝', bills: '🧾', report: '📊' }[V.tab];
   return `<header class="top">
     <button data-a="who">${face(me(), 'f56')}</button>
+    <button class="iconbtn" data-a="pocket" aria-label="جیب">👛</button>
     <h1>${title}</h1>
     ${V.cloud ? `<span title="sync" style="font-size:24px">${{ ok: '☁️✅', pending: '☁️⏳', offline: '📴', error: '☁️❗' }[V.cloud]}</span>` : ''}
     ${isAdmin() ? `<button class="iconbtn" data-a="people" aria-label="اعضا">👨‍👩‍👧</button>` : ''}
@@ -96,10 +98,12 @@ function groceryView() {
   const seg = `<div class="seg">
     <button data-a="gmode" data-v="add" class="${V.gmode === 'add' ? 'on' : ''}">➕<small>اضافه</small></button>
     <button data-a="gmode" data-v="list" class="${V.gmode === 'list' ? 'on' : ''}">🧺 ${open.length ? faDigits(open.length) : ''}<small>لست</small></button>
+    <button data-a="gmode" data-v="pantry" class="${V.gmode === 'pantry' ? 'on' : ''}">🏺<small>خانه</small></button>
   </div>`;
   const bal = hands()[S.me];
   const hand = bal ? `<button class="handcard" data-a="hand" data-v="${S.me}">🤲 <b>${money(bal, S.currency)}</b></button>` : '';
-  return `<section>${hand}${seg}</section><section>${V.gmode === 'add' ? groceryAdd(open) : groceryList()}</section>`;
+  const bodyG = V.gmode === 'add' ? groceryAdd(open) : V.gmode === 'pantry' ? pantryView() : groceryList();
+  return `<section>${hand}${seg}</section><section>${bodyG}</section>`;
 }
 
 function groceryAdd(open) {
@@ -118,6 +122,16 @@ function groceryAdd(open) {
       <button class="tile add" data-a="editCat" style="flex:1"><span class="pic">${V.edit ? '✅' : '✏️'}</span></button>
     </div>` : '';
   return `<div class="grid">${tiles}</div>${editBtns}`;
+}
+
+// How much is left at home: 🟢 full · 🟡 half · 🔴 empty (empty goes on the list).
+function pantryView() {
+  const dot = { full: '🟢', half: '🟡', empty: '🔴' };
+  return `<div class="grid">${pantryOrder(S.catalog).map((c) => `
+    <button class="tile lvl-${c.stock || 'none'}" data-a="stock" data-v="${c.id}">
+      <span class="badge lvl">${dot[c.stock] || '⚪'}</span>
+      <span class="pic">${pic(c)}</span><small>${esc(c.name)}</small></button>`).join('')}</div>
+    <p class="lbl" style="margin-top:14px;text-align:center">🟢 پُر · 🟡 نیم · 🔴 خلاص · ⚪</p>`;
 }
 
 function groceryList() {
@@ -260,6 +274,7 @@ function reportView() {
   const people = Object.entries(t.byPerson);
   const deleted = S.txns.filter((x) => x.deleted && monthKey(x.ts) === V.month);
   return `<section>
+    <button class="save" style="margin:0 0 12px;background:var(--sel)" data-a="summary">👨‍👩‍👧 📅</button>
     <div class="row" style="margin-bottom:12px">
       <button class="iconbtn" data-a="month" data-v="-1">▶️</button>
       <b class="grow" style="text-align:center;font-size:24px">${monthLabel(V.month)}</b>
@@ -450,6 +465,57 @@ function modalView() {
     case 'jarMove':
       return sheet(`${goalOf(S.jars.find((r) => r.id === M.id)?.goal).icon} ${M.dir === 'in' ? '➕' : '➖'}`, `${keypad(M.amount, S.currency)}
         <button class="save ${M.dir === 'out' ? 'danger' : ''}" data-a="jarMoveSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+    case 'pocket': {
+      const bal = pocketBalance(P.entries, S.currency);
+      const list = P.entries.filter((e) => !e.deleted && e.currency === S.currency).sort((a, b) => b.ts - a.ts).slice(0, 40);
+      return sheet('👛 📱🔒', `
+        <div class="display ${bal >= 0 ? 'in-c' : 'out-c'}">${money(bal, S.currency)}</div>
+        <div class="row" style="justify-content:center;margin-top:8px">${curSwitch()}</div>
+        <div class="bigbtns" style="margin-top:12px">
+          <button class="big in" data-a="pocketAdd" data-v="in">➕</button>
+          <button class="big out" data-a="pocketAdd" data-v="out">➖</button></div>
+        <div class="list" style="margin-top:12px">${list.map((e) => `<div class="tx"><span class="cat">${esc(e.icon)}</span>
+          <span class="grow amt ${e.type}-c">${money(e.amount, e.currency)}</span><span class="lbl">${dayLabel(e.ts)}</span>
+          <button class="round" data-a="pocketDel" data-v="${e.id}">🗑️</button></div>`).join('') || '<div class="empty">👛</div>'}</div>
+        <p class="lbl" style="text-align:center">📱🔒</p>`);
+    }
+    case 'pocketAdd': {
+      const icons = M.type === 'in' ? ['💼', '🎁', '👨‍👩‍👧', '🧵', '❓'] : ['🛒', '👕', '💊', '🎁', '📱', '🚕', '❓'];
+      return sheet(`👛 ${M.type === 'in' ? '➕' : '➖'}`, `
+        <div class="chips" style="justify-content:center">${icons.map((ic) =>
+          `<button class="chip ${M.icon === ic ? 'on' : ''}" data-a="pocketIcon" data-v="${ic}">${ic}</button>`).join('')}</div>
+        ${keypad(M.amount, S.currency)}
+        <button class="save" data-a="pocketSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+    }
+    case 'summary': {
+      V.month ||= monthKey(Date.now());
+      const t = totals(S.txns, S.currency, V.month);
+      const pages = [
+        () => { const mx = Math.max(t.in, t.out, 1); const b = (ic, v, col) => `<div class="bar"><span class="ic">${ic}</span>
+            <span class="track"><span class="fill" style="display:block;width:${(v / mx) * 100}%;background:${col}"></span></span>
+            <span class="v">${money(v, S.currency)}</span></div>`;
+          return `<div class="slide-t">${monthLabel(V.month)}</div><div class="bars">${b('⬇️', t.in, 'var(--in)')}${b('⬆️', t.out, 'var(--out)')}</div>
+            <div class="slide-big ${t.net >= 0 ? 'in-c' : 'out-c'}">${t.net >= 0 ? '🟢' : '🔴'} ${money(Math.abs(t.net), S.currency)}</div>`; },
+        () => `<div class="slide-t">⬆️ 🧩</div><div class="list">${monthCompare(S.txns, S.currency, V.month).slice(0, 5).map((r) => {
+            const arrow = r.now > r.prev ? '<span class="out-c">⬆️</span>' : r.now < r.prev ? '<span class="in-c">⬇️</span>' : '🟰';
+            return `<div class="tx"><span class="cat">${catOf('out', r.cat).icon}</span><span class="grow amt">${money(r.now, S.currency)}</span>
+              ${arrow}<span class="lbl">${money(r.prev, S.currency)}</span></div>`; }).join('') || '<div class="empty">—</div>'}</div>`,
+        () => { const net = jarsMonthNet(S.jars, S.currency, V.month);
+          return `<div class="slide-t">🫙</div>${jarsRow()}<div class="slide-big ${net >= 0 ? 'in-c' : 'out-c'}">${net >= 0 ? '➕' : '➖'} ${money(Math.abs(net), S.currency)}</div>`; },
+        () => { const l = loansView(S.loans, S.currency);
+          return `<div class="slide-t">🤝</div><div class="sum"><div class="in-c">📤 ${money(l.open.lent, S.currency)}</div>
+            <div class="out-c">📥 ${money(l.open.borrowed, S.currency)}</div></div>`; },
+        () => { const b = billsMonth(S.bills, S.txns, Date.now());
+          return `<div class="slide-t">🧾</div><div class="slide-big">✅ ${faDigits(b.paid)} / ${faDigits(b.total)}</div>
+            ${b.late ? `<div class="slide-big out-c">❗ ${faDigits(b.late)}</div>` : ''}`; },
+      ];
+      const i = Math.max(0, Math.min(pages.length - 1, M.page));
+      return sheet('👨‍👩‍👧 📅', `<div class="slide">${pages[i]()}</div>
+        <div class="row" style="justify-content:space-between;margin-top:14px">
+          <button class="iconbtn" data-a="sumNav" data-v="-1" ${i === 0 ? 'disabled' : ''}>▶️</button>
+          <span>${pages.map((_, k) => (k === i ? '●' : '○')).join(' ')}</span>
+          <button class="iconbtn" data-a="sumNav" data-v="1" ${i === pages.length - 1 ? 'disabled' : ''}>◀️</button></div>`);
+    }
     case 'invite':
       return sheet('📲', `<div class="card" style="display:grid;justify-items:center">
           <div id="qr" style="width:260px;height:260px;display:grid;place-items:center">⏳</div></div>
@@ -647,6 +713,7 @@ async function shareList() {
 // Admin screens (report, people, editing lists, deleting others' entries) need the picture PIN.
 // Unlocked for 10 minutes, and locked again as soon as the app goes to the background.
 let unlockedUntil = 0, pinFails = 0, pinLockUntil = 0;
+let P = null, pocketOpen = false;   // this person's private pocket (this phone only)
 function requireAdmin(run) {
   if (!isAdmin()) { toast('👑❌'); return; }
   if (Date.now() < unlockedUntil) { run(); return; }
@@ -654,8 +721,9 @@ function requireAdmin(run) {
   render();
 }
 function unlock(M) {
-  unlockedUntil = Date.now() + 10 * 60 * 1000;
   pinFails = 0;
+  if (M.target === 'pocket') { pocketOpen = true; V.modal = { kind: 'pocket' }; render(); return; }
+  unlockedUntil = Date.now() + 10 * 60 * 1000;
   V.modal = null;
   if (M.run) M.run(); else render();
 }
@@ -672,12 +740,13 @@ async function pinTap(i) {
   if (M.mode === 'confirm') {
     if (seq.join() !== M.first.join()) { toast('🔁❌'); Object.assign(M, { mode: 'set', first: null, shake: true, busy: false }); render(); return; }
     const pin = await makePin(seq);
-    await commit(() => { me().pin = pin; log('pinSet', '🔒✅', me().name); });
+    if (M.target === 'pocket') { P.pin = pin; await savePocket(S.me, P); }
+    else await commit(() => { me().pin = pin; log('pinSet', '🔒✅', me().name); });
     toast('🔒✅');
     unlock(M);
     return;
   }
-  if (await checkPin(seq, me().pin)) { unlock(M); return; }
+  if (await checkPin(seq, M.target === 'pocket' ? P.pin : me().pin)) { unlock(M); return; }
   pinFails += 1;
   if (pinFails >= 5) { pinLockUntil = Date.now() + 60 * 1000; pinFails = 0; setTimeout(render, 60 * 1000 + 50); }
   Object.assign(M, { shake: true, busy: false });
@@ -687,6 +756,8 @@ async function pinTap(i) {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) return;
   unlockedUntil = 0;
+  pocketOpen = false;
+  if (['pocket', 'pocketAdd'].includes(V.modal?.kind) || V.modal?.target === 'pocket') { V.modal = null; render(); }
   if (V.tab === 'report' || V.edit) { V.tab = V.tab === 'report' ? 'grocery' : V.tab; V.edit = false; render(); }
 });
 
@@ -696,7 +767,7 @@ const A = {
     if (v === 'report') requireAdmin(go); else go();
   },
   who: () => { V.modal = { kind: 'who' }; render(); },
-  iam: (v) => { unlockedUntil = 0; S.me = v; localStorage.setItem('ff-me', v); V.modal = null; if (!isAdmin() && V.tab === 'report') V.tab = 'grocery'; commit(() => {}); },
+  iam: (v) => { unlockedUntil = 0; pocketOpen = false; P = null; S.me = v; localStorage.setItem('ff-me', v); V.modal = null; if (!isAdmin() && V.tab === 'report') V.tab = 'grocery'; commit(() => {}); },
   people: () => requireAdmin(() => { V.modal = { kind: 'people' }; render(); }),
   pinReset: (v) => requireAdmin(() => commit(() => {
     member(v).pin = null; log('pinReset', '🔒↩️', member(v).name); V.modal = { kind: 'people' };
@@ -732,6 +803,36 @@ const A = {
   gmode: (v) => { V.gmode = v; V.edit = false; render(); },
   gfilter: (v) => { V.gfilter = v; render(); },
   noop: () => {},
+  pocket: async () => {
+    if (!P || P.owner !== S.me) { P = await loadPocket(S.me); P.owner = S.me; }
+    if (pocketOpen) V.modal = { kind: 'pocket' };
+    else V.modal = { kind: 'pin', target: 'pocket', mode: P.pin ? 'check' : 'set', seq: [] };
+    render();
+  },
+  pocketAdd: (v) => { V.modal = { kind: 'pocketAdd', type: v, amount: '', icon: '❓' }; render(); },
+  pocketIcon: (v) => { V.modal.icon = v; render(); },
+  pocketSave: async () => {
+    const M = V.modal;
+    P.entries.push({ id: uid(), type: M.type, amount: +M.amount, currency: S.currency, icon: M.icon, ts: Date.now() });
+    await savePocket(S.me, P);
+    V.modal = { kind: 'pocket' }; render();
+  },
+  pocketDel: async (v) => {
+    const e = P.entries.find((x) => x.id === v);
+    if (e) e.deleted = true;
+    await savePocket(S.me, P);
+    render();
+  },
+  stock: (v) => commit(() => {
+    const c = itemOf(v);
+    c.stock = nextLevel(c.stock); c.stockBy = S.me; c.stockTs = Date.now();
+    log('stock', { full: '🟢', half: '🟡', empty: '🔴' }[c.stock] || '⚪', c.name);
+    if (c.stock === 'empty' && !S.grocery.some((x) => x.item === v && !x.bought && !x.deleted)) {
+      S.grocery = addGrocery(S.grocery, v, S.me, Date.now(), uid);   // empty at home → on the list
+    }
+  }),
+  summary: () => { V.modal = { kind: 'summary', page: 0 }; render(); },
+  sumNav: (v) => { V.modal.page += +v; render(); },
   play: (v) => play(v),
   shareList: () => shareList(),
   gunit: (v) => commit(() => {
@@ -802,6 +903,8 @@ const A = {
   gbought: (v) => commit(() => {
     const x = S.grocery.find((g) => g.id === v);
     x.bought = true; x.boughtBy = S.me; x.boughtTs = Date.now(); x.unit = unitOf(x).id;
+    const ci = itemOf(x.item);
+    if (ci?.stock) { ci.stock = 'full'; ci.stockBy = S.me; ci.stockTs = Date.now(); }   // bought → full at home
     log('gbought', '✅', itemOf(x.item)?.name);
     V.modal = { kind: 'price', id: v, amount: '' };   // ask what it cost (⏭️ to skip)
   }),

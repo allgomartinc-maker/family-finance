@@ -143,3 +143,43 @@ export function abroadSummary(txns, currency, month) {
   }
   return s;
 }
+
+// ---------- pantry levels ----------
+// Tap cycles: not tracked → full → half → empty → not tracked. Empty puts it on the list.
+const NEXT = { full: 'half', half: 'empty', empty: null };
+export const nextLevel = (l) => (l ? NEXT[l] : 'full');
+const RANK = { empty: 0, half: 1, full: 2 };
+export const pantryOrder = (catalog) => catalog
+  .map((c, i) => ({ c, i }))
+  .sort((a, b) => (RANK[a.c.stock] ?? 3) - (RANK[b.c.stock] ?? 3) || a.i - b.i)
+  .map((x) => x.c);
+
+// ---------- monthly family summary ----------
+export function monthCompare(txns, currency, month) {
+  const now = totals(txns, currency, month).byCat;
+  const prev = totals(txns, currency, shiftMonth(month, -1)).byCat;
+  return [...new Set([...Object.keys(now), ...Object.keys(prev)])]
+    .map((cat) => ({ cat, now: now[cat] || 0, prev: prev[cat] || 0 }))
+    .sort((a, b) => b.now - a.now || b.prev - a.prev);
+}
+
+export function jarsMonthNet(jars, currency, month) {
+  const cur = Object.fromEntries(jars.filter((j) => j.kind === 'jar' && !j.deleted).map((j) => [j.id, j.currency]));
+  return jars.reduce((s, m) => (m.kind === 'move' && !m.deleted && cur[m.jarId] === currency && monthKey(m.ts) === month ? s + m.amount : s), 0);
+}
+
+export function billsMonth(bills, txns, now) {
+  const r = { total: 0, paid: 0, late: 0 };
+  for (const b of bills) {
+    if (b.deleted) continue;
+    r.total += 1;
+    const st = billStatus(b, txns, now);
+    if (st === 'paid') r.paid += 1;
+    if (st === 'late') r.late += 1;
+  }
+  return r;
+}
+
+// ---------- private pocket (stays on this phone) ----------
+export const pocketBalance = (entries, currency) => entries.reduce((s, e) =>
+  (e.deleted || e.currency !== currency ? s : s + (e.type === 'in' ? e.amount : -e.amount)), 0);

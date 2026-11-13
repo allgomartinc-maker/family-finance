@@ -38,3 +38,22 @@ export const fresh = () => ({
 });
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// Private pocket: kept only on this phone, one per person, never synced.
+export async function loadPocket(memberId) {
+  const db = await idb();
+  return new Promise((res) => {
+    const q = db.transaction('kv').objectStore('kv').get(`pocket:${memberId}`);
+    q.onsuccess = () => res(q.result || { pin: null, entries: [] });
+    q.onerror = () => res({ pin: null, entries: [] });
+  });
+}
+export async function savePocket(memberId, pocket) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('kv', 'readwrite');
+    tx.objectStore('kv').put(pocket, `pocket:${memberId}`);
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}

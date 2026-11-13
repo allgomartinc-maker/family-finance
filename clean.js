@@ -11,11 +11,11 @@ export const isId = (v) => typeof v === 'string' && ID.test(v);
 export const safeImage = (v) => (typeof v === 'string' && (IMG.test(v) || MEDIA.test(v)) ? v : null);
 export const safeAudio = (v) => (typeof v === 'string' && (AUDIO.test(v) || MEDIA.test(v)) ? v : null);
 
-const REFS = ['by', 'claimedBy', 'boughtBy', 'deletedBy', 'billId', 'paidTx', 'from', 'to', 'who', 'loanId', 'jarId'];
+const REFS = ['by', 'claimedBy', 'boughtBy', 'deletedBy', 'billId', 'paidTx', 'from', 'to', 'who', 'loanId', 'jarId', 'stockBy'];
 const GOALS = ['wedding', 'eid', 'health', 'hajj', 'house', 'school', 'other'];
 const COUNTRIES = ['ir', 'pk', 'tr', 'de', 'gb', 'us', 'sa', 'ae', 'other'];
 const UNIT_IDS = ['kg', 'sack', 'tin', 'bottle', 'pack', 'piece', 'dozen', 'liter'];
-const NUMS = ['qty', 'amount', 'dueDay', 'ts', 'boughtTs', 'ord', 'price', 'fee', 'target'];
+const NUMS = ['qty', 'amount', 'dueDay', 'ts', 'boughtTs', 'ord', 'price', 'fee', 'target', 'stockTs'];
 const TEXT = { name: 60, extra: 60, action: 30, emoji: 16, icon: 16 };
 
 export function cleanRecord(coll, rec) {
@@ -48,6 +48,7 @@ export function cleanRecord(coll, rec) {
     if (r.currency !== 'AFN' && r.currency !== 'USD') r.currency = 'AFN';
   }
   if (has('country') && !COUNTRIES.includes(r.country)) r.country = null;
+  if (has('stock') && !['full', 'half', 'empty'].includes(r.stock)) r.stock = null;
   if (coll === 'loans') {
     if (r.kind === 'loan') {
       if (r.dir !== 'lent' && r.dir !== 'borrowed') return null;
