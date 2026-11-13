@@ -154,3 +154,56 @@ test('visibleTxns: admin all, others only their own', () => {
   assert.deepEqual(visibleTxns(t, 'earner', 'a').map((x) => x.id), [1]);
   assert.deepEqual(visibleTxns(t, 'helper', 'b').map((x) => x.id), [2]);
 });
+
+// ---------- Phase 2 ----------
+import { loansView, jarTotals, abroadSummary } from '../logic.js';
+
+test('loans tab: admin and earner, never helper', () => {
+  assert.equal(canTab('admin', 'loans'), true);
+  assert.equal(canTab('earner', 'loans'), true);
+  assert.equal(canTab('helper', 'loans'), false);
+});
+
+test('loansView: remaining per loan, open totals per direction and currency', () => {
+  const r = [
+    { id: 'L1', kind: 'loan', dir: 'lent', who: 'uncle', amount: 10000, currency: 'AFN', ts: 1, by: 'baba' },
+    { id: 'P1', kind: 'pay', loanId: 'L1', amount: 4000, ts: 2, by: 'baba' },
+    { id: 'P2', kind: 'pay', loanId: 'L1', amount: 1000, ts: 3, by: 'baba', deleted: true },
+    { id: 'L2', kind: 'loan', dir: 'borrowed', who: 'shop', amount: 3000, currency: 'AFN', ts: 4, by: 'ali' },
+    { id: 'P3', kind: 'pay', loanId: 'L2', amount: 3000, ts: 5, by: 'ali' },
+    { id: 'L3', kind: 'loan', dir: 'borrowed', who: 'neighbor', amount: 50, currency: 'USD', ts: 6, by: 'baba' },
+  ];
+  const v = loansView(r, 'AFN');
+  assert.deepEqual(v.loans.map((l) => [l.id, l.left, l.done]), [['L2', 0, true], ['L1', 6000, false]]);
+  assert.deepEqual(v.open, { lent: 6000, borrowed: 0 });
+  assert.deepEqual(loansView(r, 'USD').open, { lent: 0, borrowed: 50 });
+});
+
+test('loansView only for one person (non-admin sees loans they wrote)', () => {
+  const r = [
+    { id: 'L1', kind: 'loan', dir: 'lent', who: 'u', amount: 5, currency: 'AFN', ts: 1, by: 'baba' },
+    { id: 'L2', kind: 'loan', dir: 'lent', who: 'u', amount: 7, currency: 'AFN', ts: 2, by: 'ali' },
+  ];
+  assert.deepEqual(loansView(r, 'AFN', 'ali').loans.map((l) => l.id), ['L2']);
+});
+
+test('jarTotals: deposits minus withdrawals per jar, per currency', () => {
+  const r = [
+    { id: 'J1', kind: 'jar', goal: 'wedding', target: 200000, currency: 'AFN' },
+    { id: 'm1', kind: 'move', jarId: 'J1', amount: 50000 },
+    { id: 'm2', kind: 'move', jarId: 'J1', amount: -10000 },
+    { id: 'm3', kind: 'move', jarId: 'J1', amount: 999, deleted: true },
+  ];
+  assert.deepEqual(jarTotals(r), { J1: 40000 });
+});
+
+test('abroadSummary: money from abroad this month, fees, by sender', () => {
+  const tx = [
+    { type: 'in', cat: 'abroad', from: 'son', amount: 20000, fee: 500, currency: 'AFN', ts: Date.parse('2026-11-05T12:00') },
+    { type: 'in', cat: 'abroad', from: 'son', amount: 10000, fee: 0, currency: 'AFN', ts: Date.parse('2026-11-10T12:00') },
+    { type: 'in', cat: 'abroad', from: 'bro', amount: 5000, currency: 'AFN', ts: Date.parse('2026-11-11T12:00') },
+    { type: 'in', cat: 'salary', amount: 9, currency: 'AFN', ts: Date.parse('2026-11-11T12:00') },
+    { type: 'in', cat: 'abroad', from: 'son', amount: 1, currency: 'AFN', ts: Date.parse('2026-11-11T12:00'), deleted: true },
+  ];
+  assert.deepEqual(abroadSummary(tx, 'AFN', '1405-08'), { total: 35000, fees: 500, bySender: { son: 30000, bro: 5000 } });
+});

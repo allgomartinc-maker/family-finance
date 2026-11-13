@@ -25,7 +25,7 @@ export const OUT_CATS = [
 
 export const IN_CATS = [
   ['salary', '💼', 'معاش'], ['work', '🔨', 'کار'], ['shop', '🏪', 'دکان'],
-  ['family', '👨‍👩‍👧', 'فامیل'], ['gift', '🎁', 'تحفه'], ['other', '❓', 'دیگر'],
+  ['abroad', '✈️', 'از خارج'], ['family', '👨‍👩‍👧', 'فامیل'], ['gift', '🎁', 'تحفه'], ['other', '❓', 'دیگر'],
 ].map(([id, icon, name]) => ({ id, icon, name }));
 
 export const BILL_KINDS = OUT_CATS.filter((c) =>
@@ -40,4 +40,16 @@ export const PICKER = ['🍞', '🥜', '🍯', '🫒', '🥬', '🍆', '🍇', '
 export const UNITS = [
   ['kg', '⚖️', 'کیلو'], ['sack', '🛍️', 'بوری'], ['tin', '🛢️', 'حلب'], ['bottle', '🍼', 'بوتل'],
   ['pack', '📦', 'بسته'], ['piece', '☝️', 'دانه'], ['dozen', '🔟', 'درجن'], ['liter', '🫙', 'لیتر'],
+].map(([id, icon, name]) => ({ id, icon, name }));
+
+// Savings goals Afghan families save for.
+export const GOALS = [
+  ['wedding', '💍', 'عروسی'], ['eid', '🌙', 'عید'], ['health', '🏥', 'داکتر'], ['hajj', '🕋', 'حج'],
+  ['house', '🏠', 'خانه'], ['school', '🎓', 'مکتب'], ['other', '🫙', 'دیگر'],
+].map(([id, icon, name]) => ({ id, icon, name }));
+
+// Where money from abroad comes from.
+export const COUNTRIES = [
+  ['ir', '🇮🇷', 'ایران'], ['pk', '🇵🇰', 'پاکستان'], ['tr', '🇹🇷', 'ترکیه'], ['de', '🇩🇪', 'آلمان'], ['gb', '🇬🇧', 'انگلستان'],
+  ['us', '🇺🇸', 'امریکا'], ['sa', '🇸🇦', 'عربستان'], ['ae', '🇦🇪', 'امارات'], ['other', '🌍', 'دیگر'],
 ].map(([id, icon, name]) => ({ id, icon, name }));

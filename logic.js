@@ -77,7 +77,7 @@ export const money = (n, cur) => `${nf.format(n)} ${cur === 'USD' ? '$' : '؋'}`
 // ---------- roles ----------
 // admin: everything (PIN) · earner: groceries, own money, bills · helper: groceries only.
 export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : m?.role === 'earner' || m?.role === 'member' ? 'earner' : 'helper');
-const TABS = { admin: ['grocery', 'money', 'bills', 'report'], earner: ['grocery', 'money', 'bills'], helper: ['grocery'] };
+const TABS = { admin: ['grocery', 'money', 'loans', 'bills', 'report'], earner: ['grocery', 'money', 'loans', 'bills'], helper: ['grocery'] };
 export const canTab = (role, tab) => (TABS[role] || TABS.helper).includes(tab);
 export const visibleTxns = (txns, role, me) => (role === 'admin' ? txns : txns.filter((x) => x.by === me));
 
@@ -107,3 +107,39 @@ export function lastPrice(grocery, item) {
   return hit ? { price: hit.price, unit: hit.unit, ts: hit.boughtTs } : null;
 }
 export const linesTotal = (lines) => lines.reduce((s, x) => s + (x.price > 0 ? x.price : 0), 0);
+
+// ---------- qarz (family loans) ----------
+// records: { kind:'loan', dir:'lent'|'borrowed', who, amount, currency, ts, by } and { kind:'pay', loanId, amount }.
+// Loans are not income or spending; they are tracked on their own.
+export function loansView(records, currency, onlyBy = null) {
+  const paid = {};
+  for (const r of records) if (r.kind === 'pay' && !r.deleted) paid[r.loanId] = (paid[r.loanId] || 0) + r.amount;
+  const loans = records
+    .filter((r) => r.kind === 'loan' && !r.deleted && r.currency === currency && (!onlyBy || r.by === onlyBy))
+    .map((r) => { const left = Math.max(0, r.amount - (paid[r.id] || 0)); return { ...r, paid: paid[r.id] || 0, left, done: left === 0 }; })
+    .sort((a, b) => b.ts - a.ts);
+  const open = { lent: 0, borrowed: 0 };
+  for (const l of loans) open[l.dir] += l.left;
+  return { loans, open };
+}
+
+// ---------- savings jars ----------
+// records: { kind:'jar', goal, target, currency } and { kind:'move', jarId, amount (+in / −out) }.
+export function jarTotals(records) {
+  const t = {};
+  for (const r of records) if (r.kind === 'jar' && !r.deleted) t[r.id] = 0;
+  for (const r of records) if (r.kind === 'move' && !r.deleted && r.jarId in t) t[r.jarId] += r.amount;
+  return t;
+}
+
+// ---------- money from abroad (hawala) ----------
+export function abroadSummary(txns, currency, month) {
+  const s = { total: 0, fees: 0, bySender: {} };
+  for (const x of txns) {
+    if (x.deleted || x.type !== 'in' || x.cat !== 'abroad' || x.currency !== currency || monthKey(x.ts) !== month) continue;
+    s.total += x.amount;
+    s.fees += x.fee > 0 ? x.fee : 0;
+    if (x.from) s.bySender[x.from] = (s.bySender[x.from] || 0) + x.amount;
+  }
+  return s;
+}

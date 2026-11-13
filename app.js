@@ -1,8 +1,8 @@
 import { load, save, uid } from './store.js';
-import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF } from './data.js';
+import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, COUNTRIES } from './data.js';
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
-  roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns,
+  roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -20,6 +20,13 @@ const me = () => S.members.find((m) => m.id === S.me);
 const isAdmin = () => me()?.role === 'admin';
 const role = () => roleOf(me());
 const ROLE_ICON = { admin: '👑', earner: '💰', helper: '🛒' };
+const contact = (id) => (S.contacts || []).find((c) => c.id === id);
+const goalOf = (id) => GOALS.find((g) => g.id === id) || GOALS[GOALS.length - 1];
+const countryOf = (id) => COUNTRIES.find((c) => c.id === id);
+// Grid of people outside the household (relatives, shopkeeper, hawala sender) + ➕ new.
+const contactGrid = (action) => `<div class="grid">${(S.contacts || []).filter((c) => !c.deleted).map((c) => `
+  <button class="tile" data-a="${action}" data-v="${c.id}">${face(c, 'f80')}<small>${esc(c.name)}</small></button>`).join('')}
+  <button class="tile add" data-a="contactNew"><span class="pic">➕</span><small>👤</small></button></div>`;
 const unitOf = (x) => UNITS.find((u) => u.id === (x.unit || itemOf(x.item)?.unit || UNIT_OF[x.item])) || UNITS.find((u) => u.id === 'piece');
 const hands = () => cashBalances(S.cash || [], S.txns, S.currency);
 const isToday = (ts) => ts && monthKey(ts) === monthKey(Date.now()) && solarDay(ts) === solarDay(Date.now());
@@ -67,7 +74,7 @@ $cam.addEventListener('change', async () => {
 
 // ---------- views ----------
 function top() {
-  const title = { grocery: '🛒', money: '💰', bills: '🧾', report: '📊' }[V.tab];
+  const title = { grocery: '🛒', money: '💰', loans: '🤝', bills: '🧾', report: '📊' }[V.tab];
   return `<header class="top">
     <button data-a="who">${face(me(), 'f56')}</button>
     <h1>${title}</h1>
@@ -77,7 +84,7 @@ function top() {
 }
 
 function tabs() {
-  const t = [['grocery', '🛒', 'سودا'], ['money', '💰', 'پول'], ['bills', '🧾', 'بل‌ها'], ['report', '📊', 'گزارش']]
+  const t = [['grocery', '🛒', 'سودا'], ['money', '💰', 'پول'], ['loans', '🤝', 'قرض'], ['bills', '🧾', 'بل‌ها'], ['report', '📊', 'گزارش']]
     .filter(([id]) => canTab(role(), id));
   if (t.length < 2) return '';
   return `<nav class="tabs">${t.map(([id, i, n]) =>
@@ -168,6 +175,7 @@ function moneyView() {
       <button class="chip give" data-a="give">🤲<b>خرچی</b></button>
       ${hb.map(([id, v]) => `<button class="chip" data-a="hand" data-v="${id}">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></button>`).join('')}
     </div>
+    ${jarsRow()}
   </section>
   <section class="list">${list.length ? list.map(txRow).join('') : '<div class="empty">💰</div>'}</section>`;
 }
@@ -177,7 +185,7 @@ const curSwitch = () => `<div class="seg" style="width:150px">
   <button data-a="cur" data-v="USD" class="${S.currency === 'USD' ? 'on' : ''}" style="font-size:24px">$</button></div>`;
 
 const txRow = (x) => `<button class="tx ${x.deleted ? 'del' : ''}" data-a="txView" data-v="${x.id}">
-  <span class="cat">${catOf(x.type, x.cat).icon}</span>
+  <span class="cat">${catOf(x.type, x.cat).icon}${x.country ? `<small>${countryOf(x.country)?.icon || ''}</small>` : ''}</span>
   <span class="grow" style="text-align:start">
     <span class="amt ${x.type}-c">${x.type === 'in' ? '⬇️' : '⬆️'} ${money(x.amount, x.currency)}</span><br>
     <span class="lbl">${dayLabel(x.ts)}</span></span>
@@ -201,6 +209,43 @@ function billsView() {
   </div>
   ${S.bills.length ? '' : '<div class="empty">🧾</div>'}
   <p class="lbl" style="margin-top:18px">✅ پرداخت شده · ⏳ نزدیک · ❗ دیر شده</p></section>`;
+}
+
+function jarsRow() {
+  const jars = S.jars.filter((j) => j.kind === 'jar' && !j.deleted && j.currency === S.currency);
+  const t = jarTotals(S.jars);
+  return `<div class="jars">${jars.map((j) => {
+    const g = goalOf(j.goal);
+    const pct = j.target > 0 ? Math.min(100, Math.round((t[j.id] / j.target) * 100)) : 0;
+    return `<button class="jar" data-a="jarOpen" data-v="${j.id}">
+      <span class="glass"><span class="fillj" style="height:${pct}%"></span><span class="gi">${g.icon}</span></span>
+      <small>${money(t[j.id], j.currency)}</small></button>`;
+  }).join('')}${isAdmin() ? '<button class="jar add" data-a="jarNew"><span class="glass"><span class="gi">➕</span></span><small>🫙</small></button>' : ''}</div>`;
+}
+
+function loansViewUI() {
+  const v = loansView(S.loans, S.currency, isAdmin() ? null : S.me);
+  const row = (l) => {
+    const c = contact(l.who);
+    return `<button class="tx ${l.done ? 'del2' : ''}" data-a="loanOpen" data-v="${l.id}">
+      <span class="cat">${l.dir === 'lent' ? '📤' : '📥'}</span>${face(c, 'f40')}
+      <span class="grow" style="text-align:start">
+        <span class="amt ${l.dir === 'lent' ? 'in-c' : 'out-c'}">${l.done ? '✅' : money(l.left, l.currency)}</span><br>
+        <span class="lbl">${money(l.amount, l.currency)} · ${dayLabel(l.ts)}</span></span>
+      ${face(member(l.by), 'f24')}</button>`;
+  };
+  return `<section>
+    <div class="sum">
+      <div class="in-c">📤 ${money(v.open.lent, S.currency)}<br><small class="lbl">بالای مردم</small></div>
+      <div class="out-c">📥 ${money(v.open.borrowed, S.currency)}<br><small class="lbl">بالای ما</small></div>
+    </div>
+    <div class="bigbtns" style="margin-top:12px">
+      <button class="big in" data-a="loanNew" data-v="lent">📤<small>قرض دادیم</small></button>
+      <button class="big out" data-a="loanNew" data-v="borrowed">📥<small>قرض گرفتیم</small></button>
+    </div>
+    <div class="row" style="margin-top:8px;justify-content:flex-end">${curSwitch()}</div>
+  </section>
+  <section class="list">${v.loans.length ? [...v.loans.filter((l) => !l.done), ...v.loans.filter((l) => l.done)].map(row).join('') : '<div class="empty">🤝</div>'}</section>`;
 }
 
 function reportView() {
@@ -232,6 +277,17 @@ function reportView() {
       ${people.map(([id, p]) => `<div class="row">${face(member(id))}
         <span class="grow in-c">⬇️ ${money(p.in, S.currency)}</span><span class="out-c">⬆️ ${money(p.out, S.currency)}</span></div>`).join('') || '<div class="muted">—</div>'}
     </div></div>
+    ${(() => {
+      const a = abroadSummary(S.txns, S.currency, V.month);
+      return a.total ? `<div class="card"><h3>✈️ ${money(a.total, S.currency)}</h3>
+        <div class="lbl">🏦 ${money(a.fees, S.currency)}</div>
+        <div class="chips">${Object.entries(a.bySender).map(([id, v]) => `<span class="chip">${face(contact(id), 'f40')}<b>${money(v, S.currency)}</b></span>`).join('')}</div></div>` : '';
+    })()}
+    ${(() => {
+      const l = loansView(S.loans, S.currency);
+      return l.open.lent || l.open.borrowed ? `<div class="card"><h3>🤝</h3><div class="sum" style="margin:0">
+        <div class="in-c">📤 ${money(l.open.lent, S.currency)}</div><div class="out-c">📥 ${money(l.open.borrowed, S.currency)}</div></div></div>` : '';
+    })()}
     ${Object.keys(hands()).length ? `<div class="card"><h3>🤲</h3><div class="chips">${Object.entries(hands()).map(([id, v]) =>
       `<button class="chip" data-a="hand" data-v="${id}">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></button>`).join('')}</div></div>` : ''}
     ${deleted.length ? `<div class="card"><h3>🗑️</h3><div class="list">${deleted.map(txRow).join('')}</div></div>` : ''}
@@ -332,6 +388,68 @@ function modalView() {
     case 'return':
       return sheet(`↩️ ${face(member(M.from), 'f40')}`, `${keypad(M.amount, S.currency)}
         <button class="save" data-a="returnSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+    case 'contact':
+      return sheet('➕👤', `
+        <div class="row" style="justify-content:center;margin-bottom:12px">
+          ${M.photo ? face({ photo: M.photo }, 'f80') : `<span class="face f80">${M.emoji ?? '❔'}</span>`}
+          <button class="iconbtn" data-a="cphoto">📷</button></div>
+        <div class="grid" style="grid-template-columns:repeat(6,1fr)">${FACES.map((f) =>
+          `<button class="tile ${M.emoji === f && !M.photo ? 'sel' : ''}" style="min-height:0;padding:6px" data-a="cemoji" data-v="${f}"><span class="pic" style="font-size:36px;height:44px;line-height:44px">${f}</span></button>`).join('')}</div>
+        <p><input class="name" id="cname" placeholder="نام" value="${esc(M.name)}"></p>
+        <button class="save" data-a="csave" ${M.emoji || M.photo ? '' : 'disabled'}>✅</button>`);
+    case 'loanNew': {
+      const head = M.dir === 'lent' ? '📤' : '📥';
+      if (!M.who) return sheet(`${head} 👤❓`, contactGrid('loanWho'));
+      return sheet(`${head} ${face(contact(M.who), 'f40')}`, `
+        <div class="row" style="margin-bottom:10px;justify-content:center"><div class="seg" style="width:170px">
+          <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">؋</button>
+          <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">$</button></div></div>
+        ${keypad(M.amount, M.currency)}
+        <button class="save" data-a="loanSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+    }
+    case 'loan': {
+      const l = loansView(S.loans, (S.loans.find((r) => r.id === M.id) || {}).currency || S.currency).loans.find((r) => r.id === M.id);
+      if (!l) return '';
+      const pays = S.loans.filter((r) => r.kind === 'pay' && r.loanId === l.id && !r.deleted).sort((a, b) => b.ts - a.ts);
+      const canEdit = isAdmin() || l.by === S.me;
+      return sheet(`${l.dir === 'lent' ? '📤' : '📥'} ${face(contact(l.who), 'f40')}`, `
+        <div class="display ${l.dir === 'lent' ? 'in-c' : 'out-c'}">${l.done ? '✅' : money(l.left, l.currency)}</div>
+        <div class="lbl" style="text-align:center;margin-top:6px">${money(l.amount, l.currency)} · ${dayLabel(l.ts)}</div>
+        <div class="list" style="margin-top:10px">${pays.map((p) => `<div class="tx"><span class="cat">💵</span>
+          <span class="grow amt">${money(p.amount, l.currency)}</span>${face(member(p.by), 'f24')}<span class="lbl">${dayLabel(p.ts)}</span></div>`).join('')}</div>
+        ${canEdit && !l.done ? '<button class="save" data-a="loanPayStart">💵</button>' : ''}
+        ${canEdit ? '<button class="save danger" data-a="loanDel">🗑️</button>' : ''}`);
+    }
+    case 'loanPay':
+      return sheet('💵', `${keypad(M.amount, M.currency)}
+        <button class="save" data-a="loanPaySave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+    case 'jarNew':
+      if (!M.goal) {
+        return sheet('➕🫙', `<div class="grid">${GOALS.map((g) =>
+          `<button class="tile" data-a="jarGoal" data-v="${g.id}"><span class="pic">${g.icon}</span><small>${g.name}</small></button>`).join('')}</div>`);
+      }
+      return sheet(`${goalOf(M.goal).icon} 🎯`, `${keypad(M.amount, S.currency)}
+        <button class="save" data-a="jarSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+    case 'jar': {
+      const j = S.jars.find((r) => r.id === M.id);
+      const saved = jarTotals(S.jars)[j.id] || 0;
+      const pct = j.target > 0 ? Math.min(100, Math.round((saved / j.target) * 100)) : 0;
+      const moves = S.jars.filter((r) => r.kind === 'move' && r.jarId === j.id && !r.deleted).sort((a, b) => b.ts - a.ts).slice(0, 20);
+      return sheet(`${goalOf(j.goal).icon}`, `
+        <div class="row" style="justify-content:center;gap:20px">
+          <span class="glass big"><span class="fillj" style="height:${pct}%"></span><span class="gi">${faDigits(pct)}٪</span></span>
+          <div><div class="amt in-c" style="font-size:28px;font-weight:700">${money(saved, j.currency)}</div>
+            <div class="lbl">🎯 ${money(j.target, j.currency)}</div></div></div>
+        <div class="list" style="margin-top:10px">${moves.map((m) => `<div class="tx"><span class="cat">${m.amount >= 0 ? '➕' : '➖'}</span>
+          <span class="grow amt ${m.amount >= 0 ? 'in-c' : 'out-c'}">${money(Math.abs(m.amount), j.currency)}</span>${face(member(m.by), 'f24')}<span class="lbl">${dayLabel(m.ts)}</span></div>`).join('')}</div>
+        <div class="row" style="gap:10px">
+          <button class="save" data-a="jarMoveStart" data-v="in">➕</button>
+          ${isAdmin() ? '<button class="save danger" data-a="jarMoveStart" data-v="out">➖</button>' : ''}</div>
+        ${isAdmin() ? '<button class="save" style="background:#555" data-a="jarDel">🗑️</button>' : ''}`);
+    }
+    case 'jarMove':
+      return sheet(`${goalOf(S.jars.find((r) => r.id === M.id)?.goal).icon} ${M.dir === 'in' ? '➕' : '➖'}`, `${keypad(M.amount, S.currency)}
+        <button class="save ${M.dir === 'out' ? 'danger' : ''}" data-a="jarMoveSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
     case 'invite':
       return sheet('📲', `<div class="card" style="display:grid;justify-items:center">
           <div id="qr" style="width:260px;height:260px;display:grid;place-items:center">⏳</div></div>
@@ -344,15 +462,24 @@ function modalView() {
         return sheet(head, `<div class="grid">${cats.map((c) =>
           `<button class="tile" data-a="txCat" data-v="${c.id}"><span class="pic">${c.icon}</span><small>${c.name}</small></button>`).join('')}</div>`);
       }
+      if (M.type === 'in' && M.cat === 'abroad' && !M.from) return sheet(`${head} 👤❓`, contactGrid('txSender'));
+      if (M.type === 'in' && M.cat === 'abroad' && !M.country) {
+        return sheet(`${head} ${face(contact(M.from), 'f40')}`, `<div class="grid">${COUNTRIES.map((c) =>
+          `<button class="tile" data-a="txCountry" data-v="${c.id}"><span class="pic">${c.icon}</span><small>${c.name}</small></button>`).join('')}</div>`);
+      }
+      const abroad = M.type === 'in' && M.cat === 'abroad';
       return sheet(head, `
-        <div class="row" style="margin-bottom:10px;justify-content:center">${M.bill ? '' : ''}
+        ${abroad ? `<div class="row" style="justify-content:center;margin-bottom:8px">${face(contact(M.from), 'f40')}
+          <span style="font-size:30px">${countryOf(M.country)?.icon || ''}</span>
+          <button class="chip ${M.feeMode ? 'on' : ''}" data-a="txFeeMode">🏦 <b>${M.fee ? money(+M.fee, M.currency) : '۰'}</b></button></div>` : ''}
+        <div class="row" style="margin-bottom:10px;justify-content:center">
           <div class="seg" style="width:170px">
             <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">؋</button>
             <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">$</button></div></div>
         ${M.type === 'out' && (hands()[S.me] || role() === 'helper') ? `<div class="seg" style="margin-bottom:10px">
           <button data-a="txFrom" data-v="hand" class="${M.paidFrom === 'hand' ? 'on' : ''}">🤲<small>${money(hands()[S.me] || 0, M.currency)}</small></button>
           <button data-a="txFrom" data-v="home" class="${M.paidFrom !== 'hand' ? 'on' : ''}">🏠</button></div>` : ''}
-        ${keypad(M.amount, M.currency)}
+        ${keypad(M.feeMode ? M.fee || '' : M.amount, M.currency)}
         <div class="row" style="margin-top:12px;justify-content:center;gap:14px">
           <button class="iconbtn" data-a="txPhoto">${M.photo ? '✅' : '📷'}</button>
           <button class="iconbtn" data-a="txVoice" style="${M.recording ? 'background:var(--out)' : ''}">${M.recording ? '⏹️' : M.voice ? '✅' : '🎤'}</button>
@@ -368,6 +495,8 @@ function modalView() {
         <div class="card" style="text-align:center">
           <div class="amt ${x.type}-c" style="font-size:40px;font-weight:700">${x.type === 'in' ? '⬇️' : '⬆️'} ${money(x.amount, x.currency)}</div>
           <div class="row" style="justify-content:center;margin-top:8px">${face(member(x.by))}<span class="lbl">${dayLabel(x.ts)} · ${c.name}</span></div>
+          ${x.cat === 'abroad' ? `<div class="row" style="justify-content:center;margin-top:8px">${face(contact(x.from))}
+            <span style="font-size:28px">${countryOf(x.country)?.icon || ''}</span>${x.fee ? `<span class="lbl">🏦 ${money(x.fee, x.currency)}</span>` : ''}</div>` : ''}
         </div>
         ${x.photo ? `<img class="photo-prev" ${mediaAttr(x.photo)} alt="">` : ''}
         ${x.voice ? `<audio controls ${mediaAttr(x.voice)} style="width:100%;margin-top:10px"></audio>` : ''}
@@ -399,9 +528,9 @@ function render() {
   if (S.members.length && !member(S.me) && !V.modal && !V.waiting) V.modal = { kind: 'who' };
   if (V.waiting && !S.members.length) { $app.innerHTML = '<div class="empty" style="opacity:1">☁️⏳</div>'; return; }
   if (!canTab(role(), V.tab)) V.tab = 'grocery';
-  S.cash ||= [];
+  S.cash ||= []; S.loans ||= []; S.jars ||= []; S.contacts ||= [];
   const body = S.members.length
-    ? ({ grocery: groceryView, money: moneyView, bills: billsView, report: reportView }[V.tab] || groceryView)()
+    ? ({ grocery: groceryView, money: moneyView, loans: loansViewUI, bills: billsView, report: reportView }[V.tab] || groceryView)()
     : '';
   const focus = document.activeElement?.id;
   const typed = [...$app.querySelectorAll('input[id]')].map((el) => [el.id, el.value]);
@@ -698,9 +827,87 @@ const A = {
   txCur: (v) => { V.modal.currency = v; render(); },
   key: (k) => {
     const M = V.modal;
-    if (k === '⌫') M.amount = M.amount.slice(0, -1);
-    else if (M.amount.length < 10) M.amount = (M.amount + k).replace(/^0+/, '');
+    const f = M.feeMode ? 'fee' : 'amount';
+    M[f] = M[f] || '';
+    if (k === '⌫') M[f] = M[f].slice(0, -1);
+    else if (M[f].length < 10) M[f] = (M[f] + k).replace(/^0+/, '');
     render();
+  },
+  txSender: (v) => { V.modal.from = v; render(); },
+  txCountry: (v) => { V.modal.country = v; render(); },
+  txFeeMode: () => { V.modal.feeMode = !V.modal.feeMode; render(); },
+
+  // outside people
+  contactNew: () => { V.modal = { kind: 'contact', back: V.modal }; render(); },
+  cemoji: (v) => { keepName('cname'); V.modal.emoji = v; V.modal.photo = null; render(); },
+  cphoto: () => { keepName('cname'); takePhoto(240, (p) => { V.modal.photo = p; render(); }); },
+  csave: () => {
+    keepName('cname');
+    const M = V.modal;
+    const c = { id: uid(), emoji: M.emoji || '🙂', photo: M.photo || null, name: M.name || '', ts: Date.now() };
+    commit(() => {
+      S.contacts.push(c);
+      log('contact', '👤➕', c.name);
+      const back = M.back;
+      if (back?.kind === 'loanNew') back.who = c.id;
+      if (back?.kind === 'tx') back.from = c.id;
+      V.modal = back || null;
+    });
+  },
+
+  // qarz
+  loanNew: (v) => { V.modal = { kind: 'loanNew', dir: v, amount: '', currency: S.currency }; render(); },
+  loanWho: (v) => { V.modal.who = v; render(); },
+  loanSave: () => commit(() => {
+    const M = V.modal;
+    S.loans.push({ id: uid(), kind: 'loan', dir: M.dir, who: M.who, amount: +M.amount, currency: M.currency, by: S.me, ts: Date.now() });
+    log('loan', M.dir === 'lent' ? '📤' : '📥', `${contact(M.who)?.name || ''} ${money(+M.amount, M.currency)}`);
+    V.modal = null;
+  }),
+  loanOpen: (v) => { V.modal = { kind: 'loan', id: v }; render(); },
+  loanPayStart: () => {
+    const l = S.loans.find((r) => r.id === V.modal.id);
+    V.modal = { kind: 'loanPay', id: l.id, amount: '', currency: l.currency };
+    render();
+  },
+  loanPaySave: () => commit(() => {
+    const M = V.modal;
+    S.loans.push({ id: uid(), kind: 'pay', loanId: M.id, amount: +M.amount, by: S.me, ts: Date.now() });
+    const l = S.loans.find((r) => r.id === M.id);
+    log('loanPay', '💵', `${contact(l?.who)?.name || ''} ${money(+M.amount, M.currency)}`);
+    V.modal = { kind: 'loan', id: M.id };
+  }),
+  loanDel: () => {
+    const l = S.loans.find((r) => r.id === V.modal.id);
+    const del = () => commit(() => { l.deleted = true; log('loanDel', '🗑️🤝', `${contact(l.who)?.name || ''} ${money(l.amount, l.currency)}`); V.modal = null; });
+    if (l.by === S.me) del(); else requireAdmin(del);
+  },
+
+  // savings jars
+  jarNew: () => requireAdmin(() => { V.modal = { kind: 'jarNew', amount: '' }; render(); }),
+  jarGoal: (v) => { V.modal.goal = v; render(); },
+  jarSave: () => commit(() => {
+    const M = V.modal;
+    S.jars.push({ id: uid(), kind: 'jar', goal: M.goal, target: +M.amount, currency: S.currency, by: S.me, ts: Date.now() });
+    log('jar', '🫙➕', goalOf(M.goal).name);
+    V.modal = null;
+  }),
+  jarOpen: (v) => { V.modal = { kind: 'jar', id: v }; render(); },
+  jarMoveStart: (v) => {
+    const id = V.modal.id;
+    const go = () => { V.modal = { kind: 'jarMove', id, dir: v, amount: '' }; render(); };
+    if (v === 'out') requireAdmin(go); else go();   // taking money out of savings needs the admin PIN
+  },
+  jarMoveSave: () => commit(() => {
+    const M = V.modal;
+    const amt = M.dir === 'in' ? +M.amount : -M.amount;
+    S.jars.push({ id: uid(), kind: 'move', jarId: M.id, amount: amt, by: S.me, ts: Date.now() });
+    log('jarMove', amt >= 0 ? '🫙➕' : '🫙➖', `${goalOf(S.jars.find((r) => r.id === M.id)?.goal).name} ${money(Math.abs(amt), S.currency)}`);
+    V.modal = { kind: 'jar', id: M.id };
+  }),
+  jarDel: () => {
+    const id = V.modal.id;
+    requireAdmin(() => commit(() => { const j = S.jars.find((r) => r.id === id); j.deleted = true; log('jarDel', '🗑️🫙', goalOf(j.goal).name); V.modal = null; }));
   },
   txPhoto: () => takePhoto(900, (p) => { V.modal.photo = p; render(); }),
   txVoice: () => toggleVoice(),
@@ -708,7 +915,8 @@ const A = {
     const M = V.modal;
     const x = { id: uid(), type: M.type, cat: M.cat, amount: +M.amount, currency: M.currency, by: S.me,
       ts: Date.now(), photo: M.photo || null, voice: M.voice || null, billId: M.billId || null,
-      paidFrom: M.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null };
+      paidFrom: M.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null,
+      ...(M.type === 'in' && M.cat === 'abroad' ? { from: M.from || null, country: M.country || null, fee: +M.fee || 0 } : {}) };
     commit(() => {
       S.txns.push(x);
       for (const id of M.lines || []) { const g = S.grocery.find((l) => l.id === id); if (g) g.paidTx = x.id; }
@@ -787,11 +995,12 @@ const COLL_SORT = {
   members: (a, b) => a.ts - b.ts,
   bills: (a, b) => a.ts - b.ts,
   grocery: (a, b) => a.ts - b.ts,
+  contacts: (a, b) => a.ts - b.ts,
 };
 async function connect() {
   if (!cfg || SY) return;
   const joining = location.hash.startsWith('#join=');
-  if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [], cash: [] }; V.waiting = true; V.modal = null; render(); }
+  if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [], cash: [], loans: [], jars: [], contacts: [] }; V.waiting = true; V.modal = null; render(); }
   try {
     SY = await startSyncLazy();
     if (emulator) window.__sync = SY;

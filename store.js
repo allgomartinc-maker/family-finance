@@ -34,7 +34,7 @@ export async function save(state) {
 
 export const fresh = () => ({
   members: [], me: null, catalog: GROCERY.map((x) => ({ ...x })),
-  grocery: [], txns: [], bills: [], log: [], cash: [], currency: 'AFN',
+  grocery: [], txns: [], bills: [], log: [], cash: [], loans: [], jars: [], contacts: [], currency: 'AFN',
 });
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

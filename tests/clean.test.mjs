@@ -85,3 +85,26 @@ test('catalog voice label must be audio', () => {
   assert.equal(cleanRecord('catalog', { id: 'rice', voice: 'media:rice_voice' }).voice, 'media:rice_voice');
   assert.equal(cleanRecord('catalog', { id: 'rice', voice: 'data:image/png;base64,AA' }).voice, null);
 });
+
+test('loans: loan needs direction + person id; pay needs loanId', () => {
+  const loan = { id: 'L1', kind: 'loan', dir: 'lent', who: 'uncle1', amount: 100, currency: 'AFN', ts: 1, by: 'baba' };
+  assert.deepEqual(cleanRecord('loans', loan), loan);
+  assert.equal(cleanRecord('loans', { ...loan, dir: 'gift' }), null);
+  assert.equal(cleanRecord('loans', { ...loan, who: '<b>' }), null);
+  assert.equal(cleanRecord('loans', { ...loan, kind: 'x' }), null);
+  assert.equal(cleanRecord('loans', { id: 'P1', kind: 'pay', loanId: 'L1', amount: '5' }).amount, 5);
+  assert.equal(cleanRecord('loans', { id: 'P1', kind: 'pay', loanId: '"x', amount: 5 }), null);
+});
+
+test('jars: goal from the known list, target a number; move needs jarId', () => {
+  assert.equal(cleanRecord('jars', { id: 'J1', kind: 'jar', goal: 'wedding', target: '9', currency: 'AFN' }).target, 9);
+  assert.equal(cleanRecord('jars', { id: 'J1', kind: 'jar', goal: '<x>', currency: 'AFN' }).goal, 'other');
+  assert.equal(cleanRecord('jars', { id: 'm1', kind: 'move', jarId: 'J1', amount: -50 }).amount, -50);
+  assert.equal(cleanRecord('jars', { id: 'm1', kind: 'move', jarId: '', amount: 5 }), null);
+});
+
+test('abroad income: fee number, country from list, sender id', () => {
+  const t = cleanRecord('txns', { id: 't1', type: 'in', cat: 'abroad', amount: 1, from: 'son1', fee: '300', country: 'ir' });
+  assert.equal(t.fee, 300); assert.equal(t.country, 'ir'); assert.equal(t.from, 'son1');
+  assert.equal(cleanRecord('txns', { id: 't1', type: 'in', amount: 1, country: 'xx"' }).country, null);
+});

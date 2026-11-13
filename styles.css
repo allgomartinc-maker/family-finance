@@ -184,3 +184,16 @@ button.lp { font-size: 15px; font-weight: 700; color: var(--out); }
 .micbtn.rec { background: var(--out); animation: pulse 1s infinite; }
 .spk { position: absolute; bottom: 4px; inset-inline-start: 6px; font-size: 14px; opacity: .6; }
 .item .pic[data-a] { cursor: pointer; }
+
+/* Phase 2: savings jars, loans */
+.jars { display: flex; gap: 12px; overflow-x: auto; padding: 12px 2px 4px; }
+.jar { flex: none; display: grid; justify-items: center; gap: 4px; }
+.jar small { font-size: 13px; font-weight: 700; color: var(--in); }
+.glass { position: relative; width: 64px; height: 84px; border: 4px solid #8fb9a2; border-top-width: 10px; border-radius: 12px 12px 18px 18px;
+  background: #fff; overflow: hidden; display: block; }
+.glass.big { width: 96px; height: 130px; }
+.fillj { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(#f2c94c, #e0a100); transition: height .4s; }
+.gi { position: absolute; inset: 0; display: grid; place-items: center; font-size: 30px; font-weight: 700; }
+.jar.add .glass { border-style: dashed; border-color: var(--line); background: transparent; }
+.tx.del2 { opacity: .5; }
+.tx .cat small { font-size: 16px; }
