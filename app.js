@@ -1,5 +1,5 @@
 import { load, save, uid, loadPocket, savePocket } from './store.js';
-import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, COUNTRIES } from './data.js';
+import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, COUNTRIES, PHOTO_ITEMS, PHOTO_UNITS } from './data.js';
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
@@ -7,7 +7,7 @@ import {
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
-import { makePin, checkPin, PIN_LEN, PIN_ICONS } from './pin.js';
+import { makePin, checkPin, PIN_LEN, PIN_KEYS } from './pin.js';
 
 let S;                                   // family state (IndexedDB)
 const V = { tab: 'grocery', gmode: 'add', gfilter: 'all', edit: false, month: null, modal: null, cloud: null, waiting: false };
@@ -35,7 +35,9 @@ const unpaidToday = () => S.grocery.filter((x) => x.bought && !x.deleted && x.bo
 const member = (id) => S.members.find((m) => m.id === id);
 const face = (m, size = 'f40') => !m ? `<span class="face ${size}">❔</span>`
   : `<span class="face ${size}">${m.photo ? `<img src="${m.photo}" alt="">` : esc(m.emoji)}</span>`;
-const pic = (x) => x?.photo ? `<img src="${x.photo}" alt="">` : esc(x?.icon ?? '❓');
+const pic = (x) => x?.photo ? `<img src="${x.photo}" alt="">`
+  : PHOTO_ITEMS.has(x?.id) ? `<img src="img/${x.id}.jpg" alt="${esc(x.name)}" loading="lazy">` : esc(x?.icon ?? '❓');
+const unitPic = (u) => PHOTO_UNITS.has(u.id) ? `<img class="uimg" src="img/u_${u.id}.jpg" alt="${esc(u.name)}">` : u.icon;
 const catOf = (type, id) => (type === 'in' ? IN_CATS : OUT_CATS).find((c) => c.id === id) || { icon: '❓', name: '' };
 const itemOf = (id) => S.catalog.find((c) => c.id === id);
 const dayLabel = (ts) => new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long' }).format(ts);
@@ -152,7 +154,7 @@ function groceryList() {
       <span class="pic" data-a="play" data-v="${x.item}">${pic(c)}</span>
       ${isDone ? '' : `<button class="round" data-a="gminus" data-v="${x.id}">➖</button>`}
       <span class="qty">${faDigits(x.qty)}</span>
-      <button class="unit" data-a="${isDone ? 'noop' : 'gunit'}" data-v="${x.id}">${u.icon}<small>${u.name}</small></button>
+      <button class="unit" data-a="${isDone ? 'noop' : 'gunit'}" data-v="${x.id}">${unitPic(u)}<small>${u.name}</small></button>
       <span class="meta grow">
         <span class="faces">${x.addedBy.map((id) => face(member(id), 'f24')).join('')}</span>
         ${isDone ? `<button class="lp" data-a="gprice" data-v="${x.id}">${x.price ? money(x.price, x.currency || S.currency) : '💲❔'}</button>`
@@ -363,15 +365,15 @@ function modalView() {
       const dots = Array.from({ length: PIN_LEN }, (_, i) => (i < M.seq.length ? '●' : '○')).join(' ');
       return sheet(head, `
         <div class="display ${M.shake ? 'shake' : ''}" style="letter-spacing:8px">${locked ? '⏳' : dots}</div>
-        <div class="keys pin">${PIN_ICONS.map((ic, i) =>
-          `<button data-a="pinTap" data-v="${i}" ${locked ? 'disabled' : ''}>${ic}</button>`).join('')}</div>
-        <div class="row" style="justify-content:center;margin-top:10px">
-          <button class="iconbtn" data-a="pinBack">⌫</button></div>`);
+        <div class="keys pin">${PIN_KEYS.slice(0, 9).map((k, i) =>
+          `<button data-a="pinTap" data-v="${i}" ${locked ? 'disabled' : ''}>${k}</button>`).join('')}
+          <span></span><button data-a="pinTap" data-v="9" ${locked ? 'disabled' : ''}>${PIN_KEYS[9]}</button>
+          <button data-a="pinBack">⌫</button></div>`);
     }
     case 'price': {
       const x = S.grocery.find((g) => g.id === M.id);
       const u = unitOf(x);
-      return sheet(`${pic(itemOf(x.item))} ${faDigits(x.qty)} ${u.icon}`, `${keypad(M.amount, S.currency)}
+      return sheet(`<span class="headpic">${pic(itemOf(x.item))}</span> ${faDigits(x.qty)} ${unitPic(u)}`, `${keypad(M.amount, S.currency)}
         <div class="row" style="gap:10px">
           <button class="save" style="background:#777" data-a="close">⏭️</button>
           <button class="save" data-a="priceSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button></div>`);
@@ -690,11 +692,15 @@ async function shareList() {
     g.fillStyle = '#fff'; g.beginPath(); g.roundRect(12, y + 4, W - 24, RH - 8, 18); g.fill();
     const item = itemOf(x.item) || { icon: '❓', name: '' };
     const u = unitOf(x);
-    if (item.photo && safeImage(item.photo)?.startsWith('data:')) { const b = await img(item.photo); if (b) g.drawImage(b, W - 96, y + 12, 72, 72); }
+    const photoSrc = item.photo && safeImage(item.photo)?.startsWith('data:') ? item.photo : PHOTO_ITEMS.has(item.id) ? `img/${item.id}.jpg` : null;
+    const b = photoSrc ? await img(photoSrc) : null;
+    if (b) { g.save(); g.beginPath(); g.roundRect(W - 96, y + 12, 72, 72, 12); g.clip(); g.drawImage(b, W - 96, y + 12, 72, 72); g.restore(); }
     else { g.font = '58px system-ui, sans-serif'; g.textAlign = 'center'; g.fillStyle = '#000'; g.fillText(item.icon, W - 60, y + RH / 2 + 2); }
+    const ub = PHOTO_UNITS.has(u.id) ? await img(`img/u_${u.id}.jpg`) : null;
     g.textAlign = 'right'; g.fillStyle = '#1d1d1d';
     g.font = '700 40px system-ui, sans-serif'; g.fillText(faDigits(x.qty), W - 115, y + RH / 2);
-    g.font = '34px system-ui, sans-serif'; g.fillText(u.icon, W - 175, y + RH / 2);
+    if (ub) { g.save(); g.beginPath(); g.roundRect(W - 205, y + RH / 2 - 22, 44, 44, 8); g.clip(); g.drawImage(ub, W - 205, y + RH / 2 - 22, 44, 44); g.restore(); }
+    else { g.font = '34px system-ui, sans-serif'; g.fillText(u.icon, W - 175, y + RH / 2); }
     g.font = '22px system-ui, sans-serif'; g.fillStyle = '#555'; g.fillText(`${u.name} · ${item.name}`, W - 225, y + RH / 2);
     const cl = member(x.claimedBy);
     if (cl && !cl.photo) { g.font = '44px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(cl.emoji, 50, y + RH / 2); }

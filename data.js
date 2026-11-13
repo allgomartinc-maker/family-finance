@@ -53,3 +53,7 @@ export const COUNTRIES = [
   ['ir', '🇮🇷', 'ایران'], ['pk', '🇵🇰', 'پاکستان'], ['tr', '🇹🇷', 'ترکیه'], ['de', '🇩🇪', 'آلمان'], ['gb', '🇬🇧', 'انگلستان'],
   ['us', '🇺🇸', 'امریکا'], ['sa', '🇸🇦', 'عربستان'], ['ae', '🇦🇪', 'امارات'], ['other', '🌍', 'دیگر'],
 ].map(([id, icon, name]) => ({ id, icon, name }));
+
+// Real photos (img/*.jpg, Unsplash licence) for the default pictures. Custom items keep their own photo or emoji.
+export const PHOTO_ITEMS = new Set(['meat', 'chicken', 'fish', 'rice', 'flour', 'bread', 'oil', 'beans', 'dal', 'potato', 'tomato', 'onion', 'garlic', 'carrot', 'cucumber', 'pepper', 'lemon', 'apple', 'banana', 'egg', 'milk', 'yogurt', 'cheese', 'tea', 'sugar', 'salt', 'soap', 'tissue', 'baby']);
+export const PHOTO_UNITS = new Set(['sack', 'bottle', 'kg']);

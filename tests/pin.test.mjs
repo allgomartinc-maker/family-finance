@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makePin, checkPin, PIN_LEN, PIN_ICONS } from '../pin.js';
+import { makePin, checkPin, PIN_LEN, PIN_KEYS } from '../pin.js';
 
-test('PIN is 4 pictures chosen from 9', () => {
+test('PIN is 4 numbers from a 0–9 keypad (Persian digits on screen)', () => {
   assert.equal(PIN_LEN, 4);
-  assert.equal(PIN_ICONS.length, 9);
+  assert.deepEqual(PIN_KEYS, ['۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹', '۰']);
 });
 
 test('makePin stores salt + hash, never the PIN itself', async () => {

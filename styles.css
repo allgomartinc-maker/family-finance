@@ -163,7 +163,7 @@ input.name { width: 100%; font: inherit; font-size: 22px; padding: 12px 14px; bo
 html, body { overflow-x: hidden; }
 
 /* picture PIN */
-.keys.pin button { font-size: 40px; height: 84px; }
+.keys.pin button { font-size: 40px; height: 78px; }
 .keys button:disabled { opacity: .35; }
 .shake { animation: shake .35s; color: var(--out); }
 @keyframes shake { 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
@@ -209,3 +209,9 @@ button.lp { font-size: 15px; font-weight: 700; color: var(--out); }
 .slide-t { text-align: center; font-size: 34px; font-weight: 700; }
 .slide-big { text-align: center; font-size: 34px; font-weight: 700; }
 .iconbtn:disabled { opacity: .3; }
+
+/* real photos */
+.tile .pic img, .item .pic img { object-fit: cover; border-radius: 14px; }
+.unit .uimg { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; }
+.headpic img { width: 48px; height: 48px; border-radius: 12px; object-fit: cover; vertical-align: middle; display: inline-block; }
+.sheet .head .t .uimg { width: 40px; height: 40px; vertical-align: middle; display: inline-block; }
