@@ -196,9 +196,9 @@ function moneyView() {
   <section class="list">${list.length ? list.map(txRow).join('') : '<div class="empty">💰</div>'}</section>`;
 }
 
-const curSwitch = () => `<div class="seg" style="width:150px">
-  <button data-a="cur" data-v="AFN" class="${S.currency === 'AFN' ? 'on' : ''}" style="font-size:24px">؋</button>
-  <button data-a="cur" data-v="USD" class="${S.currency === 'USD' ? 'on' : ''}" style="font-size:24px">$</button></div>`;
+const curSwitch = () => `<div class="seg cur" style="width:190px">
+  <button data-a="cur" data-v="AFN" class="${S.currency === 'AFN' ? 'on' : ''}" style="font-size:24px">افغانی</button>
+  <button data-a="cur" data-v="USD" class="${S.currency === 'USD' ? 'on' : ''}" style="font-size:24px">دالر</button></div>`;
 
 const txRow = (x) => `<button class="tx ${x.deleted ? 'del' : ''}" data-a="txView" data-v="${x.id}">
   <span class="cat">${catOf(x.type, x.cat).icon}${x.country ? `<small>${countryOf(x.country)?.icon || ''}</small>` : ''}</span>
@@ -418,9 +418,9 @@ function modalView() {
       const head = M.dir === 'lent' ? '📤' : '📥';
       if (!M.who) return sheet(`${head} 👤❓`, contactGrid('loanWho'));
       return sheet(`${head} ${face(contact(M.who), 'f40')}`, `
-        <div class="row" style="margin-bottom:10px;justify-content:center"><div class="seg" style="width:170px">
-          <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">؋</button>
-          <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">$</button></div></div>
+        <div class="row" style="margin-bottom:10px;justify-content:center"><div class="seg cur" style="width:190px">
+          <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">افغانی</button>
+          <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">دالر</button></div></div>
         ${keypad(M.amount, M.currency)}
         <button class="save" data-a="loanSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
     }
@@ -541,9 +541,9 @@ function modalView() {
           <span style="font-size:30px">${countryOf(M.country)?.icon || ''}</span>
           <button class="chip ${M.feeMode ? 'on' : ''}" data-a="txFeeMode">🏦 <b>${M.fee ? money(+M.fee, M.currency) : '۰'}</b></button></div>` : ''}
         <div class="row" style="margin-bottom:10px;justify-content:center">
-          <div class="seg" style="width:170px">
-            <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">؋</button>
-            <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">$</button></div></div>
+          <div class="seg cur" style="width:190px">
+            <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">افغانی</button>
+            <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">دالر</button></div></div>
         ${M.type === 'out' && (hands()[S.me] || role() === 'helper') ? `<div class="seg" style="margin-bottom:10px">
           <button data-a="txFrom" data-v="hand" class="${M.paidFrom === 'hand' ? 'on' : ''}">🤲<small>${money(hands()[S.me] || 0, M.currency)}</small></button>
           <button data-a="txFrom" data-v="home" class="${M.paidFrom !== 'hand' ? 'on' : ''}">🏠</button></div>` : ''}

@@ -72,7 +72,8 @@ const FA = '۰۱۲۳۴۵۶۷۸۹';
 export const faDigits = (s) => String(s).replace(/[0-9]/g, (c) => FA[c]);
 
 const nf = new Intl.NumberFormat('fa-AF', { maximumFractionDigits: 2 });
-export const money = (n, cur) => `${nf.format(n)} ${cur === 'USD' ? '$' : '؋'}`;
+export const CUR_NAME = { AFN: 'افغانی', USD: 'دالر' };
+export const money = (n, cur) => `${nf.format(n)} ${CUR_NAME[cur] || CUR_NAME.AFN}`;
 
 // ---------- roles ----------
 // admin: everything (PIN) · earner: groceries, own money, bills · helper: groceries only.

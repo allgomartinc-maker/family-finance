@@ -93,9 +93,9 @@ test('faDigits converts Western digits to Persian', () => {
   assert.equal(faDigits('2026'), '۲۰۲۶');
 });
 
-test('money formats with Persian digits and currency sign', () => {
-  assert.equal(money(12500, 'AFN'), '۱۲٬۵۰۰ ؋');
-  assert.equal(money(40, 'USD'), '۴۰ $');
+test('money shows the currency as a Dari word: افغانی / دالر', () => {
+  assert.equal(money(12500, 'AFN'), '۱۲٬۵۰۰ افغانی');
+  assert.equal(money(40, 'USD'), '۴۰ دالر');
 });
 
 // ---------- Phase 1 ----------

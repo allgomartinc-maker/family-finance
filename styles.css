@@ -215,3 +215,6 @@ button.lp { font-size: 15px; font-weight: 700; color: var(--out); }
 .unit .uimg { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; }
 .headpic img { width: 48px; height: 48px; border-radius: 12px; object-fit: cover; vertical-align: middle; display: inline-block; }
 .sheet .head .t .uimg { width: 40px; height: 40px; vertical-align: middle; display: inline-block; }
+
+/* currency switch shows words: افغانی / دالر */
+.seg.cur button { font-size: 17px !important; font-weight: 700; padding: 10px 4px; }
