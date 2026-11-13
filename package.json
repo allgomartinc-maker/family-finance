@@ -1,0 +1,12 @@
+{
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:rules": "JAVA_HOME=$HOME/.local/share/jdk21/Contents/Home PATH=$HOME/.local/share/jdk21/Contents/Home/bin:$PATH firebase emulators:exec --only firestore --project demo-family \"node --test tests/rules/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.1.0",
+    "firebase-tools": "^15.36.0"
+  }
+}

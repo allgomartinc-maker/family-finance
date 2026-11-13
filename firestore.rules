@@ -1,0 +1,40 @@
+rules_version = '2';
+// Only phones that joined with the family's secret join code can see or change family data.
+// Tested in tests/rules/rules.test.mjs (npm run test:rules).
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function famPath(fid) { return /databases/$(db)/documents/families/$(fid); }
+    function isIn(fid) {
+      return signedIn() && exists(/databases/$(db)/documents/families/$(fid)/joins/$(request.auth.uid));
+    }
+    function dataColl(c) { return c in ['members', 'catalog', 'grocery', 'txns', 'bills', 'log', 'media']; }
+
+    match /families/{fid} {
+      allow create: if signedIn()
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.joinCode is string
+        && request.resource.data.joinCode.size() >= 20;
+      allow read: if isIn(fid);
+      allow update: if isIn(fid)
+        && request.resource.data.owner == resource.data.owner
+        && request.resource.data.joinCode == resource.data.joinCode;
+      allow delete: if false;
+
+      // A phone joins by proving it knows the join code (from the QR / link).
+      match /joins/{uid} {
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['code', 'ts'])
+          && request.resource.data.code == get(famPath(fid)).data.joinCode;
+        allow read: if isIn(fid);
+        allow update, delete: if false;
+      }
+
+      match /{coll}/{id} {
+        allow read, create: if dataColl(coll) && isIn(fid);
+        // History log is append-only so the admin can trust it.
+        allow update, delete: if dataColl(coll) && coll != 'log' && isIn(fid);
+      }
+    }
+  }
+}
