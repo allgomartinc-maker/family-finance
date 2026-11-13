@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, CO
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -123,12 +123,12 @@ function groceryAdd(open) {
       ${qty[c.id] ? `<span class="badge">${faDigits(qty[c.id])}</span>` : ''}
       <span class="pic">${pic(c)}</span><small>${esc(c.name)}</small>
     </button>`).join('');
+  const newTile = V.edit ? '' : '<button class="tile add newitem" data-a="newItem"><span class="pic">➕</span><small>چیز نو</small></button>';
   const editBtns = isAdmin() ? `
     <div class="row" style="margin-top:14px">
-      ${V.edit ? '<button class="tile add" data-a="newItem" style="flex:1"><span class="pic">➕</span><small>چیز نو</small></button>' : ''}
-      <button class="tile add" data-a="editCat" style="flex:1"><span class="pic">${V.edit ? '✅' : '✏️'}</span><small>${V.edit ? 'تمام' : 'تغییر لست'}</small></button>
+      <button class="tile add" data-a="editCat" style="flex:1"><span class="pic">${V.edit ? '✅' : '✏️'}</span><small>${V.edit ? 'تمام' : 'پاک کردن یا ثبت صدا'}</small></button>
     </div>` : '';
-  return `<div class="grid">${tiles}</div>${editBtns}`;
+  return `<div class="grid">${tiles}${newTile}</div>${editBtns}`;
 }
 
 // How much is left at home: 🟢 full · 🟡 half · 🔴 empty (empty goes on the list).
@@ -614,14 +614,20 @@ function modalView() {
           : canDel && !x.deleted ? '<button class="save danger" data-a="txDel">🗑️ پاک کردن</button>' : ''}`);
     }
     case 'item':
+    {
+      const found = searchPicker(PICKER, M.q);
+      const list = found.length ? found : PICKER;
       return sheet('➕🛒', `
-        <div class="row" style="justify-content:center;margin-bottom:12px">
+        <div class="row" style="justify-content:center;gap:14px;margin-bottom:10px">
           <span class="face f80" style="border-radius:20px">${M.photo ? `<img src="${M.photo}" alt="">` : M.icon ?? '❔'}</span>
-          <button class="iconbtn" data-a="iphoto">${L('📷', 'عکس')}</button></div>
-        <div class="grid" style="grid-template-columns:repeat(7,1fr)">${PICKER.map((p) =>
-          `<button class="tile ${M.icon === p && !M.photo ? 'sel' : ''}" style="min-height:0;padding:4px" data-a="iemoji" data-v="${p}"><span class="pic" style="font-size:32px;height:40px;line-height:40px">${p}</span></button>`).join('')}</div>
-        <p><input class="name" id="iname" placeholder="نام" value="${esc(M.name)}"></p>
-        <button class="save" data-a="isave" ${M.icon || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
+          <button class="iconbtn" data-a="iphoto">${L('📷', 'عکس خود چیز')}</button></div>
+        <p style="margin:0 0 8px"><input class="name" id="iname" placeholder="نام را بنویسید — مثلاً انار" value="${esc(M.name)}" autocomplete="off"></p>
+        ${M.q && !found.length ? '<p class="lbl" style="text-align:center">تصویر پیدا نشد — یکی را انتخاب کنید یا 📷 عکس بگیرید</p>' : ''}
+        <div class="grid picker">${list.map((p) => `
+          <button class="tile ${M.icon === p.icon && !M.photo ? 'sel' : ''}" data-a="iemoji" data-v="${PICKER.indexOf(p)}">
+            <span class="pic">${p.icon}</span><small>${p.name}</small></button>`).join('')}</div>
+        <button class="save" data-a="isave" ${M.icon || M.photo ? '' : 'disabled'}>✅ ثبت و اضافه به لست</button>`);
+    }
     case 'bill':
       if (!M.kindId) {
         return sheet('➕🧾', `<div class="grid">${BILL_KINDS.map((c) =>
@@ -959,17 +965,28 @@ const A = {
   gundo: (v) => commit(() => { const x = S.grocery.find((g) => g.id === v); x.bought = false; }),
   editCat: () => (V.edit ? (V.edit = false, render()) : requireAdmin(() => { V.edit = true; V.modal = null; render(); })),
   rmItem: (v) => commit(() => { log('rmItem', '🛒🗑️', itemOf(v)?.name); S.catalog = S.catalog.filter((c) => c.id !== v); }),
-  newItem: () => { V.modal = { kind: 'item' }; render(); },
-  iemoji: (v) => { keepName('iname'); V.modal.icon = v; V.modal.photo = null; render(); },
+  newItem: () => { V.modal = { kind: 'item', name: '', q: '' }; render(); },
+  iemoji: (v) => {
+    const M = V.modal, p = PICKER[+v];
+    if (!p) return;
+    keepName('iname');
+    M.icon = p.icon; M.photo = null;
+    if (!M.name || M.autoName) { M.name = p.name; M.autoName = true; }   // picking a picture fills its name; typed names stay
+    render();
+  },
   iphoto: () => { keepName('iname'); takePhoto(300, (p) => { V.modal.photo = p; render(); }); },
   isave: () => {
     keepName('iname');
     const M = V.modal;
+    const picked = PICKER.find((p) => p.icon === M.icon);
+    const item = { id: uid(), icon: M.icon || '📦', photo: M.photo || null, name: (M.name || picked?.name || '').slice(0, 60), ord: Date.now(), unit: 'piece' };
     commit(() => {
-      S.catalog.push({ id: uid(), icon: M.icon || '📦', photo: M.photo || null, name: M.name || '', ord: Date.now() });
-      log('addItem', '🛒✨', M.name);
+      S.catalog.push(item);
+      S.grocery = addGrocery(S.grocery, item.id, S.me, Date.now(), uid);   // new item goes straight on the list
+      log('addItem', '🛒✨', item.name);
       V.modal = null;
     });
+    toast('🛒✅');
   },
 
   cur: (v) => commit(() => { S.currency = v; }),
@@ -1124,6 +1141,12 @@ function keepName(id) {
   const el = document.getElementById(id);
   if (el && V.modal) V.modal.name = el.value.trim();
 }
+
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'iname' || V.modal?.kind !== 'item') return;
+  V.modal.name = e.target.value; V.modal.q = e.target.value; V.modal.autoName = false;
+  render();
+});
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-a]');

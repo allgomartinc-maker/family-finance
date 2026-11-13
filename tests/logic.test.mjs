@@ -258,3 +258,16 @@ test('pocketBalance per currency, ignores deleted', () => {
   assert.equal(pocketBalance(e, 'AFN'), 2500);
   assert.equal(pocketBalance(e, 'USD'), 20);
 });
+
+// ---------- new item picker ----------
+import { searchPicker } from '../logic.js';
+
+test('searchPicker finds pictures by typed Dari name (Arabic ی/ک spellings too)', () => {
+  const lib = [{ icon: '🍇', name: 'انگور' }, { icon: '🍉', name: 'تربوز' }, { icon: '🧼', name: 'صابون' }, { icon: '🍪', name: 'کلچه / بیسکویت' }];
+  assert.deepEqual(searchPicker(lib, 'انگ').map((x) => x.icon), ['🍇']);
+  assert.deepEqual(searchPicker(lib, 'كلچه').map((x) => x.icon), ['🍪']);       // Arabic kaf
+  assert.deepEqual(searchPicker(lib, 'بیسکویت').map((x) => x.icon), ['🍪']);
+  assert.equal(searchPicker(lib, '').length, 4);                                     // empty → all
+  assert.equal(searchPicker(lib, '  ').length, 4);
+  assert.deepEqual(searchPicker(lib, 'xyz'), []);
+});

@@ -184,3 +184,11 @@ export function billsMonth(bills, txns, now) {
 // ---------- private pocket (stays on this phone) ----------
 export const pocketBalance = (entries, currency) => entries.reduce((s, e) =>
   (e.deleted || e.currency !== currency ? s : s + (e.type === 'in' ? e.amount : -e.amount)), 0);
+
+// ---------- picture search for new items ----------
+// Typed Dari may use Arabic ي/ك or extra spaces / zero-width joiners; compare loosely.
+const norm = (s) => String(s || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[\s‌]+/g, '').toLowerCase();
+export function searchPicker(lib, q) {
+  const n = norm(q);
+  return n ? lib.filter((x) => norm(x.name).includes(n)) : lib;
+}
