@@ -115,3 +115,10 @@ test('pantry level on catalog: full/half/empty or null', () => {
   assert.equal(cleanRecord('catalog', { id: 'rice', stockTs: '5' }).stockTs, 5);
   assert.equal(cleanRecord('catalog', { id: 'rice', stockBy: '"x' }).stockBy, null);
 });
+
+test('own money categories: type in/out, short name and icon', () => {
+  const c = cleanRecord('cats', { id: 'c1', type: 'in', icon: '🧶', name: 'قالین‌بافی', ts: 1, by: 'm1' });
+  assert.equal(c.name, 'قالین‌بافی');
+  assert.equal(cleanRecord('cats', { id: 'c1', type: 'x', icon: '🧶', name: 'a' }), null);
+  assert.equal(cleanRecord('cats', { id: 'c1', type: 'out', icon: '<img src=x onerror=1>xxxxxxxxxxxxxxx', name: 'a' }).icon.length, 16);
+});

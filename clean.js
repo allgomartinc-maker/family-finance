@@ -39,6 +39,7 @@ export function cleanRecord(coll, rec) {
     if (has('cat') && !isId(r.cat)) r.cat = 'other';
   }
   if (coll === 'bills' && !isId(r.kind)) return null;
+  if (coll === 'cats' && r.type !== 'in' && r.type !== 'out') return null;
   if (coll === 'members' && has('role') && !['admin', 'earner', 'helper', 'member'].includes(r.role)) r.role = 'helper';
   if (has('unit') && !UNIT_IDS.includes(r.unit)) r.unit = null;
   if (has('paidFrom') && r.paidFrom !== 'hand') r.paidFrom = null;

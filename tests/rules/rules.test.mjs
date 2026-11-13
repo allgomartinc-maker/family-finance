@@ -90,7 +90,7 @@ test('family phones can write cash handover records; outsiders cannot', async ()
 });
 
 test('loans, jars and contacts are family-only', async () => {
-  for (const c of ['loans', 'jars', 'contacts']) {
+  for (const c of ['loans', 'jars', 'contacts', 'cats']) {
     await assertSucceeds(setDoc(doc(as('owner'), `families/f1/${c}/x1`), { id: 'x1' }));
     await assertFails(getDoc(doc(as('stranger'), `families/f1/${c}/x1`)));
   }

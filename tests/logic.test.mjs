@@ -271,3 +271,22 @@ test('searchPicker finds pictures by typed Dari name (Arabic ی/ک spellings too
   assert.equal(searchPicker(lib, '  ').length, 4);
   assert.deepEqual(searchPicker(lib, 'xyz'), []);
 });
+
+// ---------- custom money categories ----------
+import { findCat, catsFor } from '../logic.js';
+
+test('findCat: built-in first, then the family\'s own categories, else "other"', () => {
+  const base = { in: [{ id: 'salary', icon: '💼', name: 'معاش' }], out: [{ id: 'food', icon: '🛒', name: 'سودا' }] };
+  const custom = [{ id: 'c1', type: 'in', icon: '🧶', name: 'قالین‌بافی' }, { id: 'c2', type: 'out', icon: '⛽', name: 'تیل', deleted: true }];
+  assert.equal(findCat(base, custom, 'in', 'salary').name, 'معاش');
+  assert.equal(findCat(base, custom, 'in', 'c1').name, 'قالین‌بافی');
+  assert.equal(findCat(base, custom, 'out', 'c1').icon, '❓');          // income category not used for spending
+  assert.equal(findCat(base, custom, 'out', 'c2').name, 'تیل');          // deleted still names old entries
+  assert.deepEqual(findCat(base, custom, 'out', 'nope'), { id: 'nope', icon: '❓', name: '' });
+});
+
+test('catsFor: built-in plus own (not deleted) for that side, own ones after', () => {
+  const base = { in: [{ id: 'salary' }], out: [{ id: 'food' }] };
+  const custom = [{ id: 'c1', type: 'in', ts: 2 }, { id: 'c0', type: 'in', ts: 1 }, { id: 'c2', type: 'out', ts: 3 }, { id: 'c3', type: 'in', ts: 4, deleted: true }];
+  assert.deepEqual(catsFor(base, custom, 'in').map((c) => c.id), ['salary', 'c0', 'c1']);
+});

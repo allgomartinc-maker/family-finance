@@ -1,9 +1,9 @@
 import { load, save, uid, loadPocket, savePocket } from './store.js';
-import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, COUNTRIES, PHOTO_ITEMS, PHOTO_UNITS } from './data.js';
+import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, COUNTRIES, PHOTO_ITEMS, PHOTO_UNITS, IN_PICS, OUT_PICS } from './data.js';
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -43,7 +43,9 @@ const face = (m, size = 'f40') => !m ? `<span class="face ${size}">❔</span>`
 const pic = (x) => x?.photo ? `<img src="${x.photo}" alt="">`
   : PHOTO_ITEMS.has(x?.id) ? `<img src="img/${x.id}.jpg" alt="${esc(x.name)}" loading="lazy">` : esc(x?.icon ?? '❓');
 const unitPic = (u) => PHOTO_UNITS.has(u.id) ? `<img class="uimg" src="img/u_${u.id}.jpg" alt="${esc(u.name)}">` : u.icon;
-const catOf = (type, id) => (type === 'in' ? IN_CATS : OUT_CATS).find((c) => c.id === id) || { icon: '❓', name: '' };
+// Built-in categories plus the family's own (S.cats). Own ones come from phones, so always escape.
+const BASE_CATS = { in: IN_CATS, out: OUT_CATS };
+const catOf = (type, id) => { const c = findCat(BASE_CATS, S.cats || [], type, id); return { ...c, icon: esc(c.icon), name: esc(c.name) }; };
 const itemOf = (id) => S.catalog.find((c) => c.id === id);
 const dayLabel = (ts) => new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long' }).format(ts);
 
@@ -341,6 +343,7 @@ function sheetTitle(M) {
       return (M.type === 'in' ? 'پول آمد' : 'مصرف') + (M.cat ? ' — ' + catOf(M.type, M.cat).name : ' — برای چه؟');
     case 'txView': { const x = S.txns.find((t) => t.id === M.id); return x ? catOf(x.type, x.cat).name : ''; }
     case 'item': return 'چیز نو برای لست';
+    case 'catNew': return M.type === 'in' ? 'نوع نو برای پول آمد' : 'نوع نو برای مصرف';
     case 'bill': return M.kindId ? 'روز پرداخت در ماه' : 'بل نو — کدام بل؟';
     case 'price': { const x = S.grocery.find((g) => g.id === M.id); return 'قیمت ' + (itemOf(x?.item)?.name || ''); }
     case 'give': return M.to ? 'خرچی برای ' + nm(M.to) : 'خرچی — به کی؟';
@@ -560,17 +563,31 @@ function modalView() {
           <span>${pages.map((_, k) => (k === i ? '●' : '○')).join(' ')}</span>
           <button class="iconbtn" data-a="sumNav" data-v="1" ${i === pages.length - 1 ? 'disabled' : ''}>${L('◀️', 'بعدی')}</button></div>`);
     }
+    case 'catNew': {
+      const lib = M.type === 'in' ? IN_PICS : OUT_PICS;
+      const found = searchPicker(lib, M.q);
+      const list = found.length ? found : lib;
+      return sheet(M.type === 'in' ? '⬇️➕' : '⬆️➕', `
+        <div class="row" style="justify-content:center;margin-bottom:10px"><span class="face f80" style="border-radius:20px">${M.icon ? esc(M.icon) : '❔'}</span></div>
+        <p style="margin:0 0 8px"><input class="name" id="catname" placeholder="نام را بنویسید — مثلاً قالین‌بافی" value="${esc(M.name)}" autocomplete="off"></p>
+        ${M.q && !found.length ? '<p class="lbl" style="text-align:center">تصویر پیدا نشد — یک تصویر انتخاب کنید و نام خود را نگه دارید</p>' : ''}
+        <div class="grid picker">${list.map((p) => `
+          <button class="tile ${M.icon === p.icon ? 'sel' : ''}" data-a="catPick" data-v="${lib.indexOf(p)}">
+            <span class="pic">${p.icon}</span><small>${p.name}</small></button>`).join('')}</div>
+        <button class="save" data-a="catSave" ${M.icon && (M.name || '').trim() ? '' : 'disabled'}>✅ ثبت نوع نو</button>`);
+    }
     case 'invite':
       return sheet('📲', `<div class="card" style="display:grid;justify-items:center">
           <div id="qr" style="width:260px;height:260px;display:grid;place-items:center">⏳</div></div>
         ${navigator.share ? '<button class="save" data-a="shareLink">📤 فرستادن لینک</button>' : ''}
         <button class="save" style="background:#555" data-a="copyLink">📋 کاپی لینک</button>`);
     case 'tx': {
-      const cats = M.type === 'in' ? IN_CATS : OUT_CATS;
+      const cats = catsFor(BASE_CATS, S.cats || [], M.type).map((c) => ({ ...c, icon: esc(c.icon), name: esc(c.name) }));
       const head = `<span class="${M.type}-c">${M.type === 'in' ? '⬇️' : '⬆️'}</span> ${M.cat ? catOf(M.type, M.cat).icon : ''}`;
       if (!M.cat) {
         return sheet(head, `<div class="grid">${cats.map((c) =>
-          `<button class="tile" data-a="txCat" data-v="${c.id}"><span class="pic">${c.icon}</span><small>${c.name}</small></button>`).join('')}</div>`);
+          `<button class="tile" data-a="txCat" data-v="${c.id}"><span class="pic">${c.icon}</span><small>${c.name}</small></button>`).join('')}
+          <button class="tile add newitem" data-a="catNew"><span class="pic">➕</span><small>نوع نو</small></button></div>`);
       }
       if (M.type === 'in' && M.cat === 'abroad' && !M.from) return sheet(`${head} 👤❓`, contactGrid('txSender'));
       if (M.type === 'in' && M.cat === 'abroad' && !M.country) {
@@ -644,7 +661,7 @@ function render() {
   if (S.members.length && !member(S.me) && !V.modal && !V.waiting) V.modal = { kind: 'who' };
   if (V.waiting && !S.members.length) { $app.innerHTML = '<div class="empty" style="opacity:1">☁️⏳</div>'; return; }
   if (!canTab(role(), V.tab)) V.tab = 'grocery';
-  S.cash ||= []; S.loans ||= []; S.jars ||= []; S.contacts ||= [];
+  S.cash ||= []; S.loans ||= []; S.jars ||= []; S.contacts ||= []; S.cats ||= [];
   const body = S.members.length
     ? ({ grocery: groceryView, money: moneyView, loans: loansViewUI, bills: billsView, report: reportView }[V.tab] || groceryView)()
     : '';
@@ -971,7 +988,9 @@ const A = {
     if (!p) return;
     keepName('iname');
     M.icon = p.icon; M.photo = null;
-    if (!M.name || M.autoName) { M.name = p.name; M.autoName = true; }   // picking a picture fills its name; typed names stay
+    if (!M.name || M.autoName || p.name.includes(M.name.trim())) { M.name = p.name; M.autoName = true; }   // typed part of a picture's name → use its full name
+    const box = document.getElementById(M.kind === 'item' ? 'iname' : 'catname');
+    if (box) box.value = M.name;   // render() keeps what is in the box, so update it first
     render();
   },
   iphoto: () => { keepName('iname'); takePhoto(300, (p) => { V.modal.photo = p; render(); }); },
@@ -992,6 +1011,28 @@ const A = {
   cur: (v) => commit(() => { S.currency = v; }),
   addTx: (v, el) => { V.modal = { kind: 'tx', type: v, cat: el.dataset.cat || null, amount: '', currency: S.currency, paidFrom: null }; render(); },
   txCat: (v) => { V.modal.cat = v; render(); },
+  catNew: () => { V.modal = { kind: 'catNew', type: V.modal.type, name: '', q: '', back: V.modal }; render(); },
+  catPick: (v) => {
+    const M = V.modal, p = (M.type === 'in' ? IN_PICS : OUT_PICS)[+v];
+    if (!p) return;
+    keepName('catname');
+    M.icon = p.icon;
+    if (!M.name || M.autoName || p.name.includes(M.name.trim())) { M.name = p.name; M.autoName = true; }   // typed part of a picture's name → use its full name
+    const box = document.getElementById(M.kind === 'item' ? 'iname' : 'catname');
+    if (box) box.value = M.name;   // render() keeps what is in the box, so update it first
+    render();
+  },
+  catSave: () => {
+    keepName('catname');
+    const M = V.modal;
+    const c = { id: uid(), type: M.type, icon: M.icon, name: (M.name || '').trim().slice(0, 60), by: S.me, ts: Date.now() };
+    if (!c.icon || !c.name) return;
+    commit(() => {
+      S.cats.push(c);
+      log('cat', `${M.type === 'in' ? '⬇️' : '⬆️'}${c.icon}`, c.name);
+      V.modal = { ...M.back, cat: c.id };   // back to the money screen with the new category chosen
+    });
+  },
   txCur: (v) => { V.modal.currency = v; render(); },
   key: (k) => {
     const M = V.modal;
@@ -1143,6 +1184,10 @@ function keepName(id) {
 }
 
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'catname' && V.modal?.kind === 'catNew') {
+    V.modal.name = e.target.value; V.modal.q = e.target.value; V.modal.autoName = false;
+    render(); return;
+  }
   if (e.target.id !== 'iname' || V.modal?.kind !== 'item') return;
   V.modal.name = e.target.value; V.modal.q = e.target.value; V.modal.autoName = false;
   render();
@@ -1170,11 +1215,12 @@ const COLL_SORT = {
   bills: (a, b) => a.ts - b.ts,
   grocery: (a, b) => a.ts - b.ts,
   contacts: (a, b) => a.ts - b.ts,
+  cats: (a, b) => a.ts - b.ts,
 };
 async function connect() {
   if (!cfg || SY) return;
   const joining = location.hash.startsWith('#join=');
-  if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [], cash: [], loans: [], jars: [], contacts: [] }; V.waiting = true; V.modal = null; render(); }
+  if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [], cash: [], loans: [], jars: [], contacts: [], cats: [] }; V.waiting = true; V.modal = null; render(); }
   try {
     SY = await startSyncLazy();
     if (emulator) window.__sync = SY;

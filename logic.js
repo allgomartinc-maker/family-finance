@@ -192,3 +192,14 @@ export function searchPicker(lib, q) {
   const n = norm(q);
   return n ? lib.filter((x) => norm(x.name).includes(n)) : lib;
 }
+
+// ---------- the family's own money categories ----------
+// base = { in: IN_CATS, out: OUT_CATS }; custom = records { id, type:'in'|'out', icon, name, ts, deleted }.
+export function findCat(base, custom, type, id) {
+  const hit = (base[type] || []).find((c) => c.id === id) || custom.find((c) => c.id === id && c.type === type);
+  return hit || { id, icon: '❓', name: '' };
+}
+export const catsFor = (base, custom, type) => [
+  ...(base[type] || []),
+  ...custom.filter((c) => c.type === type && !c.deleted).sort((a, b) => a.ts - b.ts),
+];
