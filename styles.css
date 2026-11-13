@@ -218,3 +218,32 @@ button.lp { font-size: 15px; font-weight: 700; color: var(--out); }
 
 /* currency switch shows words: افغانی / دالر */
 .seg.cur button { font-size: 17px !important; font-weight: 700; padding: 10px 4px; }
+
+/* Dari word under every picture */
+.lab { display: block; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--soft); margin-top: 2px; white-space: nowrap; }
+.lab2 { font-size: 14px; font-weight: 600; }
+.top h1 { display: grid; justify-items: center; font-size: 30px; line-height: 1; }
+.top h1 .lab { font-size: 12px; }
+.top .iconbtn { width: auto; min-width: 52px; height: auto; border-radius: 16px; padding: 6px 6px 4px; display: grid; justify-items: center; font-size: 26px; line-height: 1; }
+.iconbtn { height: auto; min-height: 56px; border-radius: 16px; padding: 6px; display: grid; justify-items: center; align-content: center; line-height: 1; }
+.mebtn { display: grid; justify-items: center; }
+.mebtn .lab { max-width: 64px; overflow: hidden; text-overflow: ellipsis; }
+.cloud { display: grid; justify-items: center; font-size: 20px; line-height: 1; }
+.round { width: 50px; height: auto; min-height: 50px; border-radius: 14px; display: grid; justify-items: center; align-content: center; padding: 4px 0; line-height: 1; }
+.round .lab { font-size: 10px; }
+.claim { width: 58px; height: auto; min-height: 58px; border-radius: 14px; display: grid; justify-items: center; align-content: center; padding: 3px 0; line-height: 1; }
+.claim .lab { font-size: 9px; max-width: 56px; overflow: hidden; text-overflow: ellipsis; }
+.item .round { width: 44px; min-height: 48px; }
+.chip.col { height: auto; min-height: 60px; flex-direction: column; justify-content: center; gap: 0; padding: 4px 10px; }
+.chip .row1 { display: flex; align-items: center; gap: 6px; }
+.sum .lab { font-size: 12px; font-weight: 600; }
+.jar .lab { color: var(--ink); font-size: 12px; }
+.bill b { font-size: 15px; }
+.bar .ic { width: 52px; display: grid; justify-items: center; line-height: 1; }
+.bar .ic .lab { font-size: 10px; }
+.tx .cat { display: grid; justify-items: center; line-height: 1; }
+.tx .cat .lab { font-size: 10px; }
+.sheet .head .t { display: grid; justify-items: center; line-height: 1.1; }
+.hlab { display: block; font-size: 17px; font-weight: 700; color: var(--ink); margin-top: 6px; text-align: center; white-space: normal; }
+.slide-t .lab { font-size: 15px; color: var(--soft); margin-top: 4px; white-space: normal; }
+.lp { font-size: 11px; }

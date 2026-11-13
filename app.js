@@ -21,13 +21,18 @@ const me = () => S.members.find((m) => m.id === S.me);
 const isAdmin = () => me()?.role === 'admin';
 const role = () => roleOf(me());
 const ROLE_ICON = { admin: '👑', earner: '💰', helper: '🛒' };
+const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور', helper: 'خریدار' };
+const TAB_NAME = { grocery: 'سودا', money: 'پول', loans: 'قرض', bills: 'بل‌ها', report: 'گزارش' };
+// Picture + its Dari word underneath: people who read can read it and teach the picture to those who can't.
+const L = (icon, word) => `${icon}<span class="lab">${word}</span>`;
+const who = (id) => esc(member(id)?.name || contact(id)?.name || '');
 const contact = (id) => (S.contacts || []).find((c) => c.id === id);
 const goalOf = (id) => GOALS.find((g) => g.id === id) || GOALS[GOALS.length - 1];
 const countryOf = (id) => COUNTRIES.find((c) => c.id === id);
 // Grid of people outside the household (relatives, shopkeeper, hawala sender) + ➕ new.
 const contactGrid = (action) => `<div class="grid">${(S.contacts || []).filter((c) => !c.deleted).map((c) => `
   <button class="tile" data-a="${action}" data-v="${c.id}">${face(c, 'f80')}<small>${esc(c.name)}</small></button>`).join('')}
-  <button class="tile add" data-a="contactNew"><span class="pic">➕</span><small>👤</small></button></div>`;
+  <button class="tile add" data-a="contactNew"><span class="pic">➕</span><small>شخص نو</small></button></div>`;
 const unitOf = (x) => UNITS.find((u) => u.id === (x.unit || itemOf(x.item)?.unit || UNIT_OF[x.item])) || UNITS.find((u) => u.id === 'piece');
 const hands = () => cashBalances(S.cash || [], S.txns, S.currency);
 const isToday = (ts) => ts && monthKey(ts) === monthKey(Date.now()) && solarDay(ts) === solarDay(Date.now());
@@ -79,11 +84,11 @@ $cam.addEventListener('change', async () => {
 function top() {
   const title = { grocery: '🛒', money: '💰', loans: '🤝', bills: '🧾', report: '📊' }[V.tab];
   return `<header class="top">
-    <button data-a="who">${face(me(), 'f56')}</button>
-    <button class="iconbtn" data-a="pocket" aria-label="جیب">👛</button>
-    <h1>${title}</h1>
-    ${V.cloud ? `<span title="sync" style="font-size:24px">${{ ok: '☁️✅', pending: '☁️⏳', offline: '📴', error: '☁️❗' }[V.cloud]}</span>` : ''}
-    ${isAdmin() ? `<button class="iconbtn" data-a="people" aria-label="اعضا">👨‍👩‍👧</button>` : ''}
+    <button class="mebtn" data-a="who">${face(me(), 'f56')}<span class="lab">${esc(me()?.name) || 'من'}</span></button>
+    <button class="iconbtn" data-a="pocket">${L('👛', 'جیب من')}</button>
+    <h1>${title}<span class="lab">${TAB_NAME[V.tab]}</span></h1>
+    ${V.cloud ? `<span class="cloud">${{ ok: L('☁️✅', 'وصل'), pending: L('☁️⏳', 'در انتظار'), offline: L('📴', 'بی‌انترنت'), error: L('☁️❗', 'مشکل') }[V.cloud]}</span>` : ''}
+    ${isAdmin() ? `<button class="iconbtn" data-a="people">${L('👨‍👩‍👧', 'اعضا')}</button>` : ''}
   </header>`;
 }
 
@@ -103,7 +108,7 @@ function groceryView() {
     <button data-a="gmode" data-v="pantry" class="${V.gmode === 'pantry' ? 'on' : ''}">🏺<small>خانه</small></button>
   </div>`;
   const bal = hands()[S.me];
-  const hand = bal ? `<button class="handcard" data-a="hand" data-v="${S.me}">🤲 <b>${money(bal, S.currency)}</b></button>` : '';
+  const hand = bal ? `<button class="handcard" data-a="hand" data-v="${S.me}">🤲 <span class="lab2">خرچی در دست من</span> <b>${money(bal, S.currency)}</b></button>` : '';
   const bodyG = V.gmode === 'add' ? groceryAdd(open) : V.gmode === 'pantry' ? pantryView() : groceryList();
   return `<section>${hand}${seg}</section><section>${bodyG}</section>`;
 }
@@ -121,7 +126,7 @@ function groceryAdd(open) {
   const editBtns = isAdmin() ? `
     <div class="row" style="margin-top:14px">
       ${V.edit ? '<button class="tile add" data-a="newItem" style="flex:1"><span class="pic">➕</span><small>چیز نو</small></button>' : ''}
-      <button class="tile add" data-a="editCat" style="flex:1"><span class="pic">${V.edit ? '✅' : '✏️'}</span></button>
+      <button class="tile add" data-a="editCat" style="flex:1"><span class="pic">${V.edit ? '✅' : '✏️'}</span><small>${V.edit ? 'تمام' : 'تغییر لست'}</small></button>
     </div>` : '';
   return `<div class="grid">${tiles}</div>${editBtns}`;
 }
@@ -137,10 +142,10 @@ function pantryView() {
 }
 
 function groceryList() {
-  const chips = [['all', '🧺'], ['free', '✋'], ...S.members.map((m) => [m.id, null])].map(([id, ic]) => {
+  const chips = [['all', '🧺', 'همه'], ['free', '✋', 'بی‌صاحب'], ...S.members.filter((m) => !m.deleted).map((m) => [m.id, null, esc(m.name)])].map(([id, ic, nm]) => {
     const n = groceryFor(S.grocery, id).length;
-    return `<button class="chip ${V.gfilter === id ? 'on' : ''}" data-a="gfilter" data-v="${id}">
-      ${ic ?? face(member(id), 'f40')}<b>${faDigits(n)}</b></button>`;
+    return `<button class="chip col ${V.gfilter === id ? 'on' : ''}" data-a="gfilter" data-v="${id}">
+      <span class="row1">${ic ?? face(member(id), 'f40')}<b>${faDigits(n)}</b></span><span class="lab">${nm}</span></button>`;
   }).join('');
   const rows = groceryFor(S.grocery, V.gfilter);
   const today = monthKey(Date.now()) + solarDay(Date.now());
@@ -152,24 +157,24 @@ function groceryList() {
     const lp = isDone ? null : lastPrice(S.grocery, x.item);
     return `<div class="item ${isDone ? 'done' : ''}">
       <span class="pic" data-a="play" data-v="${x.item}">${pic(c)}</span>
-      ${isDone ? '' : `<button class="round" data-a="gminus" data-v="${x.id}">➖</button>`}
+      ${isDone ? '' : `<button class="round" data-a="gminus" data-v="${x.id}">${L('➖', 'کم')}</button>`}
       <span class="qty">${faDigits(x.qty)}</span>
       <button class="unit" data-a="${isDone ? 'noop' : 'gunit'}" data-v="${x.id}">${unitPic(u)}<small>${u.name}</small></button>
       <span class="meta grow">
         <span class="faces">${x.addedBy.map((id) => face(member(id), 'f24')).join('')}</span>
         ${isDone ? `<button class="lp" data-a="gprice" data-v="${x.id}">${x.price ? money(x.price, x.currency || S.currency) : '💲❔'}</button>`
-          : lp ? `<small class="lp">⏮️ ${money(lp.price, S.currency)}</small>` : ''}
+          : lp ? `<small class="lp">قیمت قبلی ${money(lp.price, S.currency)}</small>` : ''}
       </span>
-      ${isDone ? `<button class="round" data-a="gundo" data-v="${x.id}">↩️</button>` : `
-        <button class="claim ${x.claimedBy === S.me ? 'mine' : ''}" data-a="gclaim" data-v="${x.id}">${cl ? face(cl, 'f56') : '✋'}</button>
-        <button class="round ok" data-a="gbought" data-v="${x.id}">✅</button>`}
+      ${isDone ? `<button class="round" data-a="gundo" data-v="${x.id}">${L('↩️', 'پس')}</button>` : `
+        <button class="claim ${x.claimedBy === S.me ? 'mine' : ''}" data-a="gclaim" data-v="${x.id}">${cl ? face(cl, 'f40') : '✋'}<span class="lab">${cl ? esc(cl.name) || 'گرفته' : 'من می‌خرم'}</span></button>
+        <button class="round ok" data-a="gbought" data-v="${x.id}">${L('✅', 'خریدم')}</button>`}
     </div>`;
   };
   const unpaid = unpaidToday();
-  return `<div class="chips">${chips}<button class="chip" data-a="shareList">📤</button></div>
+  return `<div class="chips">${chips}<button class="chip col" data-a="shareList"><span class="row1">📤</span><span class="lab">فرستادن</span></button></div>
     <div class="list">${rows.length ? rows.map((x) => row(x, false)).join('') : '<div class="empty">🧺</div>'}</div>
     ${done.length ? `<div class="list" style="margin-top:18px">${done.map((x) => row(x, true)).join('')}</div>` : ''}
-    ${unpaid.length ? `<button class="save" data-a="shopPay">🛒💸 ${linesTotal(unpaid) ? money(linesTotal(unpaid), S.currency) : ''}</button>` : ''}`;
+    ${unpaid.length ? `<button class="save" data-a="shopPay">🛒💸 پول سودا ${linesTotal(unpaid) ? money(linesTotal(unpaid), S.currency) : ''}</button>` : ''}`;
 }
 
 function moneyView() {
@@ -183,13 +188,13 @@ function moneyView() {
       <button class="big out" data-a="addTx" data-v="out">⬆️<small>مصرف</small></button>
     </div>
     <div class="sum">
-      <div class="in-c">⬇️ ${money(t.in, S.currency)}</div>
-      <div class="out-c">⬆️ ${money(t.out, S.currency)}</div>
+      <div class="in-c">⬇️ ${money(t.in, S.currency)}<span class="lab">آمد این ماه</span></div>
+      <div class="out-c">⬆️ ${money(t.out, S.currency)}<span class="lab">مصرف این ماه</span></div>
     </div>
     <div class="row" style="margin-top:8px"><span class="lbl grow">${monthLabel(m)}</span>${curSwitch()}</div>
     <div class="chips" style="margin-top:10px">
       <button class="chip give" data-a="give">🤲<b>خرچی</b></button>
-      ${hb.map(([id, v]) => `<button class="chip" data-a="hand" data-v="${id}">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></button>`).join('')}
+      ${hb.map(([id, v]) => `<button class="chip col" data-a="hand" data-v="${id}"><span class="row1">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></span><span class="lab">خرچی ${who(id)}</span></button>`).join('')}
     </div>
     ${jarsRow()}
   </section>
@@ -204,7 +209,7 @@ const txRow = (x) => `<button class="tx ${x.deleted ? 'del' : ''}" data-a="txVie
   <span class="cat">${catOf(x.type, x.cat).icon}${x.country ? `<small>${countryOf(x.country)?.icon || ''}</small>` : ''}</span>
   <span class="grow" style="text-align:start">
     <span class="amt ${x.type}-c">${x.type === 'in' ? '⬇️' : '⬆️'} ${money(x.amount, x.currency)}</span><br>
-    <span class="lbl">${dayLabel(x.ts)}</span></span>
+    <span class="lbl">${catOf(x.type, x.cat).name} · ${who(x.by)} · ${dayLabel(x.ts)}</span></span>
   ${x.paidFrom === 'hand' ? '🤲' : ''}${x.photo ? '📷' : ''}${x.voice ? '🎤' : ''} ${face(member(x.by), 'f40')}
 </button>`;
 
@@ -216,12 +221,13 @@ function billsView() {
     const k = BILL_KINDS.find((c) => c.id === b.kind) || { icon: '❓' };
     return `<button class="bill ${s}" data-a="${V.edit ? 'rmBill' : 'payBill'}" data-v="${b.id}">
       ${V.edit ? '<span class="xbtn">✖</span>' : ''}
-      <span class="pic">${k.icon}</span><span class="st">${st[s]}</span>
-      <small class="muted">📅 ${faDigits(b.dueDay)}</small></button>`;
+      <span class="pic">${k.icon}</span><b>${k.name || ''}</b><span class="st">${st[s]}</span>
+      <small class="muted">${{ paid: 'پرداخت شد', due: 'نزدیک است', late: 'دیر شده', ok: '' }[s]}</small>
+      <small class="muted">📅 روز ${faDigits(b.dueDay)}</small></button>`;
   }).join('');
   return `<section><div class="grid">${tiles}
-    ${isAdmin() ? `${V.edit ? '<button class="tile add" data-a="newBill"><span class="pic">➕</span></button>' : ''}
-      <button class="tile add" data-a="editCat"><span class="pic">${V.edit ? '✅' : '✏️'}</span></button>` : ''}
+    ${isAdmin() ? `${V.edit ? '<button class="tile add" data-a="newBill"><span class="pic">➕</span><small>بل نو</small></button>' : ''}
+      <button class="tile add" data-a="editCat"><span class="pic">${V.edit ? '✅' : '✏️'}</span><small>${V.edit ? 'تمام' : 'تغییر بل‌ها'}</small></button>` : ''}
   </div>
   ${S.bills.length ? '' : '<div class="empty">🧾</div>'}
   <p class="lbl" style="margin-top:18px">✅ پرداخت شده · ⏳ نزدیک · ❗ دیر شده</p></section>`;
@@ -235,8 +241,8 @@ function jarsRow() {
     const pct = j.target > 0 ? Math.min(100, Math.round((t[j.id] / j.target) * 100)) : 0;
     return `<button class="jar" data-a="jarOpen" data-v="${j.id}">
       <span class="glass"><span class="fillj" style="height:${pct}%"></span><span class="gi">${g.icon}</span></span>
-      <small>${money(t[j.id], j.currency)}</small></button>`;
-  }).join('')}${isAdmin() ? '<button class="jar add" data-a="jarNew"><span class="glass"><span class="gi">➕</span></span><small>🫙</small></button>' : ''}</div>`;
+      <small>${money(t[j.id], j.currency)}</small><span class="lab">${g.name}</span></button>`;
+  }).join('')}${isAdmin() ? '<button class="jar add" data-a="jarNew"><span class="glass"><span class="gi">➕</span></span><span class="lab">پس‌انداز نو</span></button>' : ''}</div>`;
 }
 
 function loansViewUI() {
@@ -247,7 +253,7 @@ function loansViewUI() {
       <span class="cat">${l.dir === 'lent' ? '📤' : '📥'}</span>${face(c, 'f40')}
       <span class="grow" style="text-align:start">
         <span class="amt ${l.dir === 'lent' ? 'in-c' : 'out-c'}">${l.done ? '✅' : money(l.left, l.currency)}</span><br>
-        <span class="lbl">${money(l.amount, l.currency)} · ${dayLabel(l.ts)}</span></span>
+        <span class="lbl">${esc(c?.name)} · ${l.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dayLabel(l.ts)}</span></span>
       ${face(member(l.by), 'f24')}</button>`;
   };
   return `<section>
@@ -276,50 +282,85 @@ function reportView() {
   const people = Object.entries(t.byPerson);
   const deleted = S.txns.filter((x) => x.deleted && monthKey(x.ts) === V.month);
   return `<section>
-    <button class="save" style="margin:0 0 12px;background:var(--sel)" data-a="summary">👨‍👩‍👧 📅</button>
+    <button class="save" style="margin:0 0 12px;background:var(--sel)" data-a="summary">👨‍👩‍👧 📅 خلاصهٔ ماه برای فامیل</button>
     <div class="row" style="margin-bottom:12px">
-      <button class="iconbtn" data-a="month" data-v="-1">▶️</button>
+      <button class="iconbtn" data-a="month" data-v="-1">${L('▶️', 'ماه قبل')}</button>
       <b class="grow" style="text-align:center;font-size:24px">${monthLabel(V.month)}</b>
-      <button class="iconbtn" data-a="month" data-v="1">◀️</button>
+      <button class="iconbtn" data-a="month" data-v="1">${L('◀️', 'ماه بعد')}</button>
     </div>
     <div class="row" style="justify-content:center;margin-bottom:12px">${curSwitch()}</div>
     <div class="card"><div class="bars">
-      ${bar('⬇️', t.in, 'var(--in)')}${bar('⬆️', t.out, 'var(--out)')}
-      ${bar(t.net >= 0 ? '🟢' : '🔴', Math.abs(t.net), t.net >= 0 ? 'var(--in)' : 'var(--out)')}
+      ${bar(L('⬇️', 'آمد'), t.in, 'var(--in)')}${bar(L('⬆️', 'مصرف'), t.out, 'var(--out)')}
+      ${bar(t.net >= 0 ? L('🟢', 'باقی') : L('🔴', 'کم'), Math.abs(t.net), t.net >= 0 ? 'var(--in)' : 'var(--out)')}
     </div></div>
-    <div class="card"><h3>⬆️ 🧩</h3><div class="bars">
-      ${cats.length ? cats.map(([c, v]) => bar(catOf('out', c).icon, v, 'var(--out)', cmax)).join('') : '<div class="muted">—</div>'}
+    <div class="card"><h3>⬆️ 🧩 مصرف به کدام چیز</h3><div class="bars">
+      ${cats.length ? cats.map(([c, v]) => bar(L(catOf('out', c).icon, catOf('out', c).name), v, 'var(--out)', cmax)).join('') : '<div class="muted">—</div>'}
     </div></div>
-    <div class="card"><h3>👨‍👩‍👧</h3><div class="bars">
-      ${people.map(([id, p]) => `<div class="row">${face(member(id))}
+    <div class="card"><h3>👨‍👩‍👧 هر نفر</h3><div class="bars">
+      ${people.map(([id, p]) => `<div class="row">${face(member(id))}<span class="lbl">${who(id)}</span>
         <span class="grow in-c">⬇️ ${money(p.in, S.currency)}</span><span class="out-c">⬆️ ${money(p.out, S.currency)}</span></div>`).join('') || '<div class="muted">—</div>'}
     </div></div>
     ${(() => {
       const a = abroadSummary(S.txns, S.currency, V.month);
-      return a.total ? `<div class="card"><h3>✈️ ${money(a.total, S.currency)}</h3>
-        <div class="lbl">🏦 ${money(a.fees, S.currency)}</div>
-        <div class="chips">${Object.entries(a.bySender).map(([id, v]) => `<span class="chip">${face(contact(id), 'f40')}<b>${money(v, S.currency)}</b></span>`).join('')}</div></div>` : '';
+      return a.total ? `<div class="card"><h3>✈️ پول از خارج: ${money(a.total, S.currency)}</h3>
+        <div class="lbl">🏦 کمیشن حواله: ${money(a.fees, S.currency)}</div>
+        <div class="chips">${Object.entries(a.bySender).map(([id, v]) => `<span class="chip col"><span class="row1">${face(contact(id), 'f40')}<b>${money(v, S.currency)}</b></span><span class="lab">${who(id)}</span></span>`).join('')}</div></div>` : '';
     })()}
     ${(() => {
       const l = loansView(S.loans, S.currency);
-      return l.open.lent || l.open.borrowed ? `<div class="card"><h3>🤝</h3><div class="sum" style="margin:0">
-        <div class="in-c">📤 ${money(l.open.lent, S.currency)}</div><div class="out-c">📥 ${money(l.open.borrowed, S.currency)}</div></div></div>` : '';
+      return l.open.lent || l.open.borrowed ? `<div class="card"><h3>🤝 قرض</h3><div class="sum" style="margin:0">
+        <div class="in-c">📤 ${money(l.open.lent, S.currency)}<span class="lab">بالای مردم</span></div><div class="out-c">📥 ${money(l.open.borrowed, S.currency)}<span class="lab">بالای ما</span></div></div></div>` : '';
     })()}
-    ${Object.keys(hands()).length ? `<div class="card"><h3>🤲</h3><div class="chips">${Object.entries(hands()).map(([id, v]) =>
-      `<button class="chip" data-a="hand" data-v="${id}">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></button>`).join('')}</div></div>` : ''}
-    ${deleted.length ? `<div class="card"><h3>🗑️</h3><div class="list">${deleted.map(txRow).join('')}</div></div>` : ''}
-    <div class="card"><h3>🕘</h3><div class="log">
+    ${Object.keys(hands()).length ? `<div class="card"><h3>🤲 خرچی در دست</h3><div class="chips">${Object.entries(hands()).map(([id, v]) =>
+      `<button class="chip col" data-a="hand" data-v="${id}"><span class="row1">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></span><span class="lab">${who(id)}</span></button>`).join('')}</div></div>` : ''}
+    ${deleted.length ? `<div class="card"><h3>🗑️ پاک‌شده‌ها</h3><div class="list">${deleted.map(txRow).join('')}</div></div>` : ''}
+    <div class="card"><h3>🕘 تاریخچه (کی، چه کرد)</h3><div class="log">
       ${S.log.slice(0, 60).map((l) => `<div class="row">${face(member(l.by), 'f24')}
         <span style="font-size:24px">${esc(l.icon)}</span><span class="grow">${esc(l.extra)}</span>
         <span class="lbl">${dayLabel(l.ts)}</span></div>`).join('') || '<div class="muted">—</div>'}
     </div></div>
-    <button class="save" style="background:#555" data-a="export">💾</button>
+    <button class="save" style="background:#555" data-a="export">💾 ذخیره (بکاپ)</button>
   </section>`;
 }
 
 // ---------- modals ----------
+// Every pop-up gets a Dari title under its pictures.
+function sheetTitle(M) {
+  if (!M) return '';
+  const nm = (id) => member(id)?.name || contact(id)?.name || '';
+  switch (M.kind) {
+    case 'setup': return 'خوش آمدید — شما کی هستید؟';
+    case 'member': return M.self ? 'من کی هستم؟' : 'عضو نو';
+    case 'who': return 'شما کی هستید؟';
+    case 'people': return 'اعضای فامیل';
+    case 'pin': return (M.target === 'pocket' ? 'رمز جیب: ' : 'رمز مدیر: ') + ({ set: 'رمز نو بسازید', confirm: 'دوباره بزنید', check: 'رمز را بزنید' }[M.mode]);
+    case 'invite': return 'دعوت به فامیل';
+    case 'tx':
+      if (M.type === 'in' && M.cat === 'abroad' && !M.from) return 'پول از خارج — کی روان کرد؟';
+      if (M.type === 'in' && M.cat === 'abroad' && !M.country) return 'از کدام کشور؟';
+      return (M.type === 'in' ? 'پول آمد' : 'مصرف') + (M.cat ? ' — ' + catOf(M.type, M.cat).name : ' — برای چه؟');
+    case 'txView': { const x = S.txns.find((t) => t.id === M.id); return x ? catOf(x.type, x.cat).name : ''; }
+    case 'item': return 'چیز نو برای لست';
+    case 'bill': return M.kindId ? 'روز پرداخت در ماه' : 'بل نو — کدام بل؟';
+    case 'price': { const x = S.grocery.find((g) => g.id === M.id); return 'قیمت ' + (itemOf(x?.item)?.name || ''); }
+    case 'give': return M.to ? 'خرچی برای ' + nm(M.to) : 'خرچی — به کی؟';
+    case 'hand': return 'خرچی در دست ' + nm(M.id);
+    case 'return': return 'پس دادن باقی پول';
+    case 'contact': return 'شخص نو';
+    case 'loanNew': return (M.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم') + (M.who ? ' — ' + nm(M.who) : ' — به/از کی؟');
+    case 'loan': { const l = S.loans.find((r) => r.id === M.id); return 'قرض ' + nm(l?.who); }
+    case 'loanPay': return 'پرداخت قرض';
+    case 'jarNew': return M.goal ? 'هدف پس‌انداز — چقدر؟' : 'پس‌انداز نو — برای چه؟';
+    case 'jar': return 'پس‌انداز ' + goalOf(S.jars.find((r) => r.id === M.id)?.goal).name;
+    case 'jarMove': return M.dir === 'in' ? 'گذاشتن در پس‌انداز' : 'برداشتن از پس‌انداز';
+    case 'pocket': return 'جیب من — فقط در همین تلفون';
+    case 'pocketAdd': return M.type === 'in' ? 'پول آمد به جیب من' : 'خرچ از جیب من';
+    case 'summary': return 'خلاصهٔ ماه برای فامیل';
+    default: return '';
+  }
+}
 const sheet = (head, body) => `<div class="sheet-bg" data-a="closeBg"><div class="sheet">
-  <div class="head">${S.members.length && !V.modal?.required ? '<button class="iconbtn" data-a="close">✖</button>' : '<span style="width:56px"></span>'}<span class="t">${head}</span><span style="width:56px"></span></div>
+  <div class="head">${S.members.length && !V.modal?.required ? `<button class="iconbtn" data-a="close">${L('✖', 'بستن')}</button>` : '<span style="width:56px"></span>'}<span class="t">${head}<span class="hlab">${esc(sheetTitle(V.modal))}</span></span><span style="width:56px"></span></div>
   ${body}</div></div>`;
 
 const keypad = (val, cur) => `
@@ -336,7 +377,7 @@ function modalView() {
       return sheet(first ? '👋' : '➕👤', `
         <div class="row" style="justify-content:center;margin-bottom:12px">
           ${M.photo ? face({ photo: M.photo }, 'f80') : `<span class="face f80">${M.emoji ?? '❔'}</span>`}
-          <button class="iconbtn" data-a="mphoto">📷</button></div>
+          <button class="iconbtn" data-a="mphoto">${L('📷', 'عکس')}</button></div>
         <div class="grid" style="grid-template-columns:repeat(6,1fr)">${FACES.map((f) =>
           `<button class="tile ${M.emoji === f && !M.photo ? 'sel' : ''}" style="min-height:0;padding:6px" data-a="memoji" data-v="${f}"><span class="pic" style="font-size:36px;height:44px;line-height:44px">${f}</span></button>`).join('')}</div>
         <p><input class="name" id="mname" placeholder="نام (اختیاری)" value="${esc(M.name)}"></p>
@@ -344,21 +385,21 @@ function modalView() {
           <button data-a="mrole" data-v="helper" class="${M.role === 'helper' ? 'on' : ''}">🛒<small>خریدار</small></button>
           <button data-a="mrole" data-v="earner" class="${M.role === 'earner' ? 'on' : ''}">💰<small>نان‌آور</small></button>
           <button data-a="mrole" data-v="admin" class="${M.role === 'admin' ? 'on' : ''}">👑<small>مدیر</small></button></div>`}
-        <button class="save" data-a="msave" ${M.emoji || M.photo ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="msave" ${M.emoji || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
     }
     case 'who':
       return sheet('👤❓', `<div class="grid">${S.members.filter((m) => !m.deleted).map((m) => `
         <button class="tile ${m.id === S.me ? 'sel' : ''}" data-a="iam" data-v="${m.id}">
           <span class="badge">${ROLE_ICON[roleOf(m)]}</span>${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}
-        <button class="tile add" data-a="newSelf"><span class="pic">➕</span></button></div>`);
+        <button class="tile add" data-a="newSelf"><span class="pic">➕</span><small>من نو هستم</small></button></div>`);
     case 'people':
       return sheet('👨‍👩‍👧', `<div class="list">${S.members.filter((m) => !m.deleted).map((m) => `
         <div class="item">${face(m, 'f56')}<span class="grow">${esc(m.name)}</span>
-          <button class="round" data-a="${m.id === S.me ? 'noop' : 'roleCycle'}" data-v="${m.id}">${ROLE_ICON[roleOf(m)]}</button>
-          ${m.id !== S.me && m.role === 'admin' && m.pin ? `<button class="round" data-a="pinReset" data-v="${m.id}">🔒↩️</button>` : ''}
-          ${m.id === S.me ? '' : `<button class="round" data-a="rmMember" data-v="${m.id}">🗑️</button>`}</div>`).join('')}</div>
-        <button class="save" data-a="newMember">➕👤</button>
-        ${SY ? '<button class="save" style="background:var(--sel)" data-a="invite">📲</button>' : ''}`);
+          <button class="round" data-a="${m.id === S.me ? 'noop' : 'roleCycle'}" data-v="${m.id}">${L(ROLE_ICON[roleOf(m)], ROLE_NAME[roleOf(m)])}</button>
+          ${m.id !== S.me && m.role === 'admin' && m.pin ? `<button class="round" data-a="pinReset" data-v="${m.id}">${L('🔒↩️', 'رمز نو')}</button>` : ''}
+          ${m.id === S.me ? '' : `<button class="round" data-a="rmMember" data-v="${m.id}">${L('🗑️', 'پاک')}</button>`}</div>`).join('')}</div>
+        <button class="save" data-a="newMember">➕👤 عضو نو</button>
+        ${SY ? '<button class="save" style="background:var(--sel)" data-a="invite">📲 دعوت با QR</button>' : ''}`);
     case 'pin': {
       const locked = Date.now() < pinLockUntil;
       const head = { set: '🔒➕', confirm: '🔒🔁', check: '🔒' }[M.mode];
@@ -375,7 +416,7 @@ function modalView() {
       const u = unitOf(x);
       return sheet(`<span class="headpic">${pic(itemOf(x.item))}</span> ${faDigits(x.qty)} ${unitPic(u)}`, `${keypad(M.amount, S.currency)}
         <div class="row" style="gap:10px">
-          <button class="save" style="background:#777" data-a="close">⏭️</button>
+          <button class="save" style="background:#777" data-a="close">⏭️ بعداً</button>
           <button class="save" data-a="priceSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button></div>`);
     }
     case 'give':
@@ -400,7 +441,7 @@ function modalView() {
         <div class="list" style="margin-top:10px">${ev.map((e) => `<div class="tx"><span class="cat">${e.icon}</span>
           <span class="grow amt ${e.amt >= 0 ? 'in-c' : 'out-c'}">${money(Math.abs(e.amt), S.currency)}</span>
           ${e.who ? face(member(e.who), 'f24') : ''}<span class="lbl">${dayLabel(e.ts)}</span></div>`).join('') || '<div class="empty">🤲</div>'}</div>
-        ${canReturn ? `<button class="save" data-a="returnStart">↩️</button>` : ''}`);
+        ${canReturn ? `<button class="save" data-a="returnStart">↩️ پس دادن باقی پول</button>` : ''}`);
     }
     case 'return':
       return sheet(`↩️ ${face(member(M.from), 'f40')}`, `${keypad(M.amount, S.currency)}
@@ -409,11 +450,11 @@ function modalView() {
       return sheet('➕👤', `
         <div class="row" style="justify-content:center;margin-bottom:12px">
           ${M.photo ? face({ photo: M.photo }, 'f80') : `<span class="face f80">${M.emoji ?? '❔'}</span>`}
-          <button class="iconbtn" data-a="cphoto">📷</button></div>
+          <button class="iconbtn" data-a="cphoto">${L('📷', 'عکس')}</button></div>
         <div class="grid" style="grid-template-columns:repeat(6,1fr)">${FACES.map((f) =>
           `<button class="tile ${M.emoji === f && !M.photo ? 'sel' : ''}" style="min-height:0;padding:6px" data-a="cemoji" data-v="${f}"><span class="pic" style="font-size:36px;height:44px;line-height:44px">${f}</span></button>`).join('')}</div>
         <p><input class="name" id="cname" placeholder="نام" value="${esc(M.name)}"></p>
-        <button class="save" data-a="csave" ${M.emoji || M.photo ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="csave" ${M.emoji || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'loanNew': {
       const head = M.dir === 'lent' ? '📤' : '📥';
       if (!M.who) return sheet(`${head} 👤❓`, contactGrid('loanWho'));
@@ -434,8 +475,8 @@ function modalView() {
         <div class="lbl" style="text-align:center;margin-top:6px">${money(l.amount, l.currency)} · ${dayLabel(l.ts)}</div>
         <div class="list" style="margin-top:10px">${pays.map((p) => `<div class="tx"><span class="cat">💵</span>
           <span class="grow amt">${money(p.amount, l.currency)}</span>${face(member(p.by), 'f24')}<span class="lbl">${dayLabel(p.ts)}</span></div>`).join('')}</div>
-        ${canEdit && !l.done ? '<button class="save" data-a="loanPayStart">💵</button>' : ''}
-        ${canEdit ? '<button class="save danger" data-a="loanDel">🗑️</button>' : ''}`);
+        ${canEdit && !l.done ? '<button class="save" data-a="loanPayStart">💵 پرداخت قرض</button>' : ''}
+        ${canEdit ? '<button class="save danger" data-a="loanDel">🗑️ پاک کردن</button>' : ''}`);
     }
     case 'loanPay':
       return sheet('💵', `${keypad(M.amount, M.currency)}
@@ -460,9 +501,9 @@ function modalView() {
         <div class="list" style="margin-top:10px">${moves.map((m) => `<div class="tx"><span class="cat">${m.amount >= 0 ? '➕' : '➖'}</span>
           <span class="grow amt ${m.amount >= 0 ? 'in-c' : 'out-c'}">${money(Math.abs(m.amount), j.currency)}</span>${face(member(m.by), 'f24')}<span class="lbl">${dayLabel(m.ts)}</span></div>`).join('')}</div>
         <div class="row" style="gap:10px">
-          <button class="save" data-a="jarMoveStart" data-v="in">➕</button>
-          ${isAdmin() ? '<button class="save danger" data-a="jarMoveStart" data-v="out">➖</button>' : ''}</div>
-        ${isAdmin() ? '<button class="save" style="background:#555" data-a="jarDel">🗑️</button>' : ''}`);
+          <button class="save" data-a="jarMoveStart" data-v="in">➕ گذاشتن</button>
+          ${isAdmin() ? '<button class="save danger" data-a="jarMoveStart" data-v="out">➖ برداشتن</button>' : ''}</div>
+        ${isAdmin() ? '<button class="save" style="background:#555" data-a="jarDel">🗑️ پاک کردن</button>' : ''}`);
     }
     case 'jarMove':
       return sheet(`${goalOf(S.jars.find((r) => r.id === M.id)?.goal).icon} ${M.dir === 'in' ? '➕' : '➖'}`, `${keypad(M.amount, S.currency)}
@@ -474,18 +515,19 @@ function modalView() {
         <div class="display ${bal >= 0 ? 'in-c' : 'out-c'}">${money(bal, S.currency)}</div>
         <div class="row" style="justify-content:center;margin-top:8px">${curSwitch()}</div>
         <div class="bigbtns" style="margin-top:12px">
-          <button class="big in" data-a="pocketAdd" data-v="in">➕</button>
-          <button class="big out" data-a="pocketAdd" data-v="out">➖</button></div>
+          <button class="big in" data-a="pocketAdd" data-v="in">➕<small>پول آمد</small></button>
+          <button class="big out" data-a="pocketAdd" data-v="out">➖<small>خرچ کردم</small></button></div>
         <div class="list" style="margin-top:12px">${list.map((e) => `<div class="tx"><span class="cat">${esc(e.icon)}</span>
           <span class="grow amt ${e.type}-c">${money(e.amount, e.currency)}</span><span class="lbl">${dayLabel(e.ts)}</span>
-          <button class="round" data-a="pocketDel" data-v="${e.id}">🗑️</button></div>`).join('') || '<div class="empty">👛</div>'}</div>
+          <button class="round" data-a="pocketDel" data-v="${e.id}">${L('🗑️', 'پاک')}</button></div>`).join('') || '<div class="empty">👛</div>'}</div>
         <p class="lbl" style="text-align:center">📱🔒</p>`);
     }
     case 'pocketAdd': {
-      const icons = M.type === 'in' ? ['💼', '🎁', '👨‍👩‍👧', '🧵', '❓'] : ['🛒', '👕', '💊', '🎁', '📱', '🚕', '❓'];
+      const icons = M.type === 'in' ? [['💼', 'کار'], ['🎁', 'تحفه'], ['👨‍👩‍👧', 'فامیل'], ['🧵', 'خیاطی'], ['❓', 'دیگر']]
+        : [['🛒', 'سودا'], ['👕', 'لباس'], ['💊', 'دوا'], ['🎁', 'تحفه'], ['📱', 'تیلفون'], ['🚕', 'کرایه'], ['❓', 'دیگر']];
       return sheet(`👛 ${M.type === 'in' ? '➕' : '➖'}`, `
-        <div class="chips" style="justify-content:center">${icons.map((ic) =>
-          `<button class="chip ${M.icon === ic ? 'on' : ''}" data-a="pocketIcon" data-v="${ic}">${ic}</button>`).join('')}</div>
+        <div class="chips" style="justify-content:center;flex-wrap:wrap">${icons.map(([ic, nm]) =>
+          `<button class="chip col ${M.icon === ic ? 'on' : ''}" data-a="pocketIcon" data-v="${ic}"><span class="row1">${ic}</span><span class="lab">${nm}</span></button>`).join('')}</div>
         ${keypad(M.amount, S.currency)}
         <button class="save" data-a="pocketSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
     }
@@ -496,33 +538,33 @@ function modalView() {
         () => { const mx = Math.max(t.in, t.out, 1); const b = (ic, v, col) => `<div class="bar"><span class="ic">${ic}</span>
             <span class="track"><span class="fill" style="display:block;width:${(v / mx) * 100}%;background:${col}"></span></span>
             <span class="v">${money(v, S.currency)}</span></div>`;
-          return `<div class="slide-t">${monthLabel(V.month)}</div><div class="bars">${b('⬇️', t.in, 'var(--in)')}${b('⬆️', t.out, 'var(--out)')}</div>
+          return `<div class="slide-t">${monthLabel(V.month)}<span class="lab">آمد، مصرف و باقی</span></div><div class="bars">${b('⬇️', t.in, 'var(--in)')}${b('⬆️', t.out, 'var(--out)')}</div>
             <div class="slide-big ${t.net >= 0 ? 'in-c' : 'out-c'}">${t.net >= 0 ? '🟢' : '🔴'} ${money(Math.abs(t.net), S.currency)}</div>`; },
-        () => `<div class="slide-t">⬆️ 🧩</div><div class="list">${monthCompare(S.txns, S.currency, V.month).slice(0, 5).map((r) => {
+        () => `<div class="slide-t">⬆️ 🧩<span class="lab">مصرف به کدام چیز (این ماه / ماه قبل)</span></div><div class="list">${monthCompare(S.txns, S.currency, V.month).slice(0, 5).map((r) => {
             const arrow = r.now > r.prev ? '<span class="out-c">⬆️</span>' : r.now < r.prev ? '<span class="in-c">⬇️</span>' : '🟰';
-            return `<div class="tx"><span class="cat">${catOf('out', r.cat).icon}</span><span class="grow amt">${money(r.now, S.currency)}</span>
+            return `<div class="tx"><span class="cat">${L(catOf('out', r.cat).icon, catOf('out', r.cat).name)}</span><span class="grow amt">${money(r.now, S.currency)}</span>
               ${arrow}<span class="lbl">${money(r.prev, S.currency)}</span></div>`; }).join('') || '<div class="empty">—</div>'}</div>`,
         () => { const net = jarsMonthNet(S.jars, S.currency, V.month);
-          return `<div class="slide-t">🫙</div>${jarsRow()}<div class="slide-big ${net >= 0 ? 'in-c' : 'out-c'}">${net >= 0 ? '➕' : '➖'} ${money(Math.abs(net), S.currency)}</div>`; },
+          return `<div class="slide-t">🫙<span class="lab">پس‌انداز</span></div>${jarsRow()}<div class="slide-big ${net >= 0 ? 'in-c' : 'out-c'}">${net >= 0 ? '➕' : '➖'} ${money(Math.abs(net), S.currency)}</div>`; },
         () => { const l = loansView(S.loans, S.currency);
-          return `<div class="slide-t">🤝</div><div class="sum"><div class="in-c">📤 ${money(l.open.lent, S.currency)}</div>
+          return `<div class="slide-t">🤝<span class="lab">قرض</span></div><div class="sum"><div class="in-c">📤 ${money(l.open.lent, S.currency)}</div>
             <div class="out-c">📥 ${money(l.open.borrowed, S.currency)}</div></div>`; },
         () => { const b = billsMonth(S.bills, S.txns, Date.now());
-          return `<div class="slide-t">🧾</div><div class="slide-big">✅ ${faDigits(b.paid)} / ${faDigits(b.total)}</div>
+          return `<div class="slide-t">🧾<span class="lab">بل‌ها پرداخت شده</span></div><div class="slide-big">✅ ${faDigits(b.paid)} / ${faDigits(b.total)}</div>
             ${b.late ? `<div class="slide-big out-c">❗ ${faDigits(b.late)}</div>` : ''}`; },
       ];
       const i = Math.max(0, Math.min(pages.length - 1, M.page));
       return sheet('👨‍👩‍👧 📅', `<div class="slide">${pages[i]()}</div>
         <div class="row" style="justify-content:space-between;margin-top:14px">
-          <button class="iconbtn" data-a="sumNav" data-v="-1" ${i === 0 ? 'disabled' : ''}>▶️</button>
+          <button class="iconbtn" data-a="sumNav" data-v="-1" ${i === 0 ? 'disabled' : ''}>${L('▶️', 'قبلی')}</button>
           <span>${pages.map((_, k) => (k === i ? '●' : '○')).join(' ')}</span>
-          <button class="iconbtn" data-a="sumNav" data-v="1" ${i === pages.length - 1 ? 'disabled' : ''}>◀️</button></div>`);
+          <button class="iconbtn" data-a="sumNav" data-v="1" ${i === pages.length - 1 ? 'disabled' : ''}>${L('◀️', 'بعدی')}</button></div>`);
     }
     case 'invite':
       return sheet('📲', `<div class="card" style="display:grid;justify-items:center">
           <div id="qr" style="width:260px;height:260px;display:grid;place-items:center">⏳</div></div>
-        ${navigator.share ? '<button class="save" data-a="shareLink">📤</button>' : ''}
-        <button class="save" style="background:#555" data-a="copyLink">📋</button>`);
+        ${navigator.share ? '<button class="save" data-a="shareLink">📤 فرستادن لینک</button>' : ''}
+        <button class="save" style="background:#555" data-a="copyLink">📋 کاپی لینک</button>`);
     case 'tx': {
       const cats = M.type === 'in' ? IN_CATS : OUT_CATS;
       const head = `<span class="${M.type}-c">${M.type === 'in' ? '⬇️' : '⬆️'}</span> ${M.cat ? catOf(M.type, M.cat).icon : ''}`;
@@ -539,18 +581,18 @@ function modalView() {
       return sheet(head, `
         ${abroad ? `<div class="row" style="justify-content:center;margin-bottom:8px">${face(contact(M.from), 'f40')}
           <span style="font-size:30px">${countryOf(M.country)?.icon || ''}</span>
-          <button class="chip ${M.feeMode ? 'on' : ''}" data-a="txFeeMode">🏦 <b>${M.fee ? money(+M.fee, M.currency) : '۰'}</b></button></div>` : ''}
+          <button class="chip ${M.feeMode ? 'on' : ''}" data-a="txFeeMode">🏦 کمیشن <b>${M.fee ? money(+M.fee, M.currency) : '۰'}</b></button></div>` : ''}
         <div class="row" style="margin-bottom:10px;justify-content:center">
           <div class="seg cur" style="width:190px">
             <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">افغانی</button>
             <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">دالر</button></div></div>
         ${M.type === 'out' && (hands()[S.me] || role() === 'helper') ? `<div class="seg" style="margin-bottom:10px">
-          <button data-a="txFrom" data-v="hand" class="${M.paidFrom === 'hand' ? 'on' : ''}">🤲<small>${money(hands()[S.me] || 0, M.currency)}</small></button>
-          <button data-a="txFrom" data-v="home" class="${M.paidFrom !== 'hand' ? 'on' : ''}">🏠</button></div>` : ''}
+          <button data-a="txFrom" data-v="hand" class="${M.paidFrom === 'hand' ? 'on' : ''}">🤲<small>از خرچی ${money(hands()[S.me] || 0, M.currency)}</small></button>
+          <button data-a="txFrom" data-v="home" class="${M.paidFrom !== 'hand' ? 'on' : ''}">🏠<small>از پول خانه</small></button></div>` : ''}
         ${keypad(M.feeMode ? M.fee || '' : M.amount, M.currency)}
         <div class="row" style="margin-top:12px;justify-content:center;gap:14px">
-          <button class="iconbtn" data-a="txPhoto">${M.photo ? '✅' : '📷'}</button>
-          <button class="iconbtn" data-a="txVoice" style="${M.recording ? 'background:var(--out)' : ''}">${M.recording ? '⏹️' : M.voice ? '✅' : '🎤'}</button>
+          <button class="iconbtn" data-a="txPhoto">${L(M.photo ? '✅' : '📷', 'عکس رسید')}</button>
+          <button class="iconbtn" data-a="txVoice" style="${M.recording ? 'background:var(--out)' : ''}">${L(M.recording ? '⏹️' : M.voice ? '✅' : '🎤', M.recording ? 'ایستاد' : 'صدا')}</button>
         </div>
         ${M.photo ? `<img class="photo-prev" style="margin-top:10px;max-height:160px" src="${M.photo}" alt="">` : ''}
         <button class="save" data-a="txSave" ${+M.amount > 0 && !M.recording ? '' : 'disabled'}>✅</button>`);
@@ -568,18 +610,18 @@ function modalView() {
         </div>
         ${x.photo ? `<img class="photo-prev" ${mediaAttr(x.photo)} alt="">` : ''}
         ${x.voice ? `<audio controls ${mediaAttr(x.voice)} style="width:100%;margin-top:10px"></audio>` : ''}
-        ${x.deleted && isAdmin() ? '<button class="save" data-a="txRestore">↩️</button>'
-          : canDel && !x.deleted ? '<button class="save danger" data-a="txDel">🗑️</button>' : ''}`);
+        ${x.deleted && isAdmin() ? '<button class="save" data-a="txRestore">↩️ دوباره آوردن</button>'
+          : canDel && !x.deleted ? '<button class="save danger" data-a="txDel">🗑️ پاک کردن</button>' : ''}`);
     }
     case 'item':
       return sheet('➕🛒', `
         <div class="row" style="justify-content:center;margin-bottom:12px">
           <span class="face f80" style="border-radius:20px">${M.photo ? `<img src="${M.photo}" alt="">` : M.icon ?? '❔'}</span>
-          <button class="iconbtn" data-a="iphoto">📷</button></div>
+          <button class="iconbtn" data-a="iphoto">${L('📷', 'عکس')}</button></div>
         <div class="grid" style="grid-template-columns:repeat(7,1fr)">${PICKER.map((p) =>
           `<button class="tile ${M.icon === p && !M.photo ? 'sel' : ''}" style="min-height:0;padding:4px" data-a="iemoji" data-v="${p}"><span class="pic" style="font-size:32px;height:40px;line-height:40px">${p}</span></button>`).join('')}</div>
         <p><input class="name" id="iname" placeholder="نام" value="${esc(M.name)}"></p>
-        <button class="save" data-a="isave" ${M.icon || M.photo ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="isave" ${M.icon || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'bill':
       if (!M.kindId) {
         return sheet('➕🧾', `<div class="grid">${BILL_KINDS.map((c) =>
