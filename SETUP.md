@@ -1,4 +1,7 @@
-# Family app — turn on sharing between phones
+# Family app
+
+Live: https://allgomartinc-maker.github.io/family-finance/  
+Firebase project: `family-finance-75f11` (already set up — steps below are for reference).
 
 Free Firebase "Spark" plan. No credit card. About 10 minutes.
 
