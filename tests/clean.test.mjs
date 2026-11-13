@@ -41,9 +41,9 @@ test('id references (by, item, addedBy, claimedBy) must be safe ids', () => {
   assert.equal(cleanRecord('grocery', { id: 'g1', item: 'r"ice', qty: 1, addedBy: [] }), null);
 });
 
-test('member role is admin or member only', () => {
-  assert.equal(cleanRecord('members', { id: 'm1', role: 'superuser' }).role, 'member');
-  assert.equal(cleanRecord('members', { id: 'm1', role: 'admin' }).role, 'admin');
+test('member role: admin / earner / helper / member kept; anything else → helper (least access)', () => {
+  assert.equal(cleanRecord('members', { id: 'm1', role: 'superuser' }).role, 'helper');
+  for (const r of ['admin', 'earner', 'helper', 'member']) assert.equal(cleanRecord('members', { id: 'm1', role: r }).role, r);
 });
 
 test('long strings are cut', () => {
@@ -61,4 +61,27 @@ test('member pin: valid salt/hash kept, anything else removed', () => {
   assert.equal(cleanRecord('members', { id: 'm1', pin: { salt: '<x>', hash: 'b'.repeat(64) } }).pin, null);
   assert.equal(cleanRecord('members', { id: 'm1', pin: 'abc' }).pin, null);
   assert.deepEqual(cleanRecord('members', { id: 'm1', pin: { ...pin, extra: '<script>' } }).pin, pin);
+});
+
+test('cash records: kind give/return only, people must be ids, amount a number', () => {
+  const ok = { id: 'c1', kind: 'give', from: 'baba', to: 'ali', amount: 5000, currency: 'AFN', by: 'baba', ts: 1 };
+  assert.deepEqual(cleanRecord('cash', ok), ok);
+  assert.equal(cleanRecord('cash', { ...ok, kind: 'steal' }), null);
+  assert.equal(cleanRecord('cash', { ...ok, to: '"><b>' }), null);
+  assert.equal(cleanRecord('cash', { ...ok, amount: 'x' }).amount, 0);
+  assert.equal(cleanRecord('cash', { ...ok, currency: 'EUR' }).currency, 'AFN');
+});
+
+test('units must be known; price is a number; paidFrom is hand or null', () => {
+  assert.equal(cleanRecord('grocery', { id: 'g1', item: 'rice', qty: 1, addedBy: [], unit: 'sack', price: '3200' }).price, 3200);
+  assert.equal(cleanRecord('grocery', { id: 'g1', item: 'rice', qty: 1, addedBy: [], unit: '<i>' }).unit, null);
+  assert.equal(cleanRecord('catalog', { id: 'rice', unit: 'kg' }).unit, 'kg');
+  assert.equal(cleanRecord('txns', { id: 't1', type: 'out', amount: 1, paidFrom: 'hand' }).paidFrom, 'hand');
+  assert.equal(cleanRecord('txns', { id: 't1', type: 'out', amount: 1, paidFrom: 'bank"' }).paidFrom, null);
+});
+
+test('catalog voice label must be audio', () => {
+  assert.equal(cleanRecord('catalog', { id: 'rice', voice: 'data:audio/webm;base64,AA' }).voice, 'data:audio/webm;base64,AA');
+  assert.equal(cleanRecord('catalog', { id: 'rice', voice: 'media:rice_voice' }).voice, 'media:rice_voice');
+  assert.equal(cleanRecord('catalog', { id: 'rice', voice: 'data:image/png;base64,AA' }).voice, null);
 });

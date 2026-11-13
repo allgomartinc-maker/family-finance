@@ -73,3 +73,37 @@ export const faDigits = (s) => String(s).replace(/[0-9]/g, (c) => FA[c]);
 
 const nf = new Intl.NumberFormat('fa-AF', { maximumFractionDigits: 2 });
 export const money = (n, cur) => `${nf.format(n)} ${cur === 'USD' ? '$' : '؋'}`;
+
+// ---------- roles ----------
+// admin: everything (PIN) · earner: groceries, own money, bills · helper: groceries only.
+export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : m?.role === 'earner' || m?.role === 'member' ? 'earner' : 'helper');
+const TABS = { admin: ['grocery', 'money', 'bills', 'report'], earner: ['grocery', 'money', 'bills'], helper: ['grocery'] };
+export const canTab = (role, tab) => (TABS[role] || TABS.helper).includes(tab);
+export const visibleTxns = (txns, role, me) => (role === 'admin' ? txns : txns.filter((x) => x.by === me));
+
+// ---------- cash in hand (خرچی) ----------
+// Money handed to a person for shopping. Giving is not spending: it becomes spending
+// only when that person records an expense "from hand".
+export function cashBalances(cash, txns, currency) {
+  const b = {};
+  const add = (p, n) => { b[p] = (b[p] || 0) + n; };
+  for (const c of cash) {
+    if (c.deleted || c.currency !== currency) continue;
+    if (c.kind === 'give') add(c.to, c.amount);
+    if (c.kind === 'return') add(c.from, -c.amount);
+  }
+  for (const x of txns) {
+    if (!x.deleted && x.type === 'out' && x.paidFrom === 'hand' && x.currency === currency) add(x.by, -x.amount);
+  }
+  for (const k of Object.keys(b)) if (b[k] === 0) delete b[k];
+  return b;
+}
+
+// ---------- prices ----------
+export function lastPrice(grocery, item) {
+  const hit = grocery
+    .filter((x) => x.item === item && x.bought && !x.deleted && x.price > 0)
+    .sort((a, b) => b.boughtTs - a.boughtTs)[0];
+  return hit ? { price: hit.price, unit: hit.unit, ts: hit.boughtTs } : null;
+}
+export const linesTotal = (lines) => lines.reduce((s, x) => s + (x.price > 0 ? x.price : 0), 0);

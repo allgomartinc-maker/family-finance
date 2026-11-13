@@ -52,3 +52,9 @@ test('undefined fields are dropped (Firestore rejects undefined)', () => {
   const ops = planWrites({}, 'bills', [{ id: 'b1', x: undefined }]);
   assert.deepEqual(ops[0].data, { id: 'b1' });
 });
+
+test('catalog voice label moves to a media doc', () => {
+  const ops = planWrites({}, 'catalog', [{ id: 'rice', icon: 'x', voice: 'data:audio/webm;base64,AA' }]);
+  assert.deepEqual(ops.map((o) => `${o.coll}/${o.id}`), ['media/rice_voice', 'catalog/rice']);
+  assert.equal(ops[1].data.voice, 'media:rice_voice');
+});

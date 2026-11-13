@@ -97,3 +97,60 @@ test('money formats with Persian digits and currency sign', () => {
   assert.equal(money(12500, 'AFN'), '۱۲٬۵۰۰ ؋');
   assert.equal(money(40, 'USD'), '۴۰ $');
 });
+
+// ---------- Phase 1 ----------
+import { roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns } from '../logic.js';
+
+test('roles: old "member" counts as earner; unknown → helper', () => {
+  assert.equal(roleOf({ role: 'admin' }), 'admin');
+  assert.equal(roleOf({ role: 'member' }), 'earner');
+  assert.equal(roleOf({ role: 'earner' }), 'earner');
+  assert.equal(roleOf({ role: 'helper' }), 'helper');
+  assert.equal(roleOf({}), 'helper');
+  assert.equal(roleOf(undefined), 'helper');
+});
+
+test('helper sees only grocery; earner no report; admin all', () => {
+  assert.deepEqual(['grocery', 'money', 'bills', 'report'].filter((t) => canTab('helper', t)), ['grocery']);
+  assert.deepEqual(['grocery', 'money', 'bills', 'report'].filter((t) => canTab('earner', t)), ['grocery', 'money', 'bills']);
+  assert.deepEqual(['grocery', 'money', 'bills', 'report'].filter((t) => canTab('admin', t)), ['grocery', 'money', 'bills', 'report']);
+});
+
+test('cash in hand = given − returned − spent from hand (per currency, ignores deleted)', () => {
+  const cash = [
+    { id: 'c1', kind: 'give', from: 'baba', to: 'ali', amount: 5000, currency: 'AFN' },
+    { id: 'c2', kind: 'give', from: 'baba', to: 'ali', amount: 1000, currency: 'AFN', deleted: true },
+    { id: 'c3', kind: 'return', from: 'ali', to: 'baba', amount: 700, currency: 'AFN' },
+    { id: 'c4', kind: 'give', from: 'baba', to: 'mama', amount: 20, currency: 'USD' },
+  ];
+  const txns = [
+    { id: 't1', type: 'out', amount: 3800, currency: 'AFN', by: 'ali', paidFrom: 'hand' },
+    { id: 't2', type: 'out', amount: 999, currency: 'AFN', by: 'ali' },                       // not from hand
+    { id: 't3', type: 'out', amount: 100, currency: 'AFN', by: 'ali', paidFrom: 'hand', deleted: true },
+  ];
+  assert.deepEqual(cashBalances(cash, txns, 'AFN'), { ali: 500 });
+  assert.deepEqual(cashBalances(cash, txns, 'USD'), { mama: 20 });
+});
+
+test('lastPrice: newest bought line with a price for that item', () => {
+  const g = [
+    { item: 'rice', bought: true, boughtTs: 1, price: 3000, unit: 'sack' },
+    { item: 'rice', bought: true, boughtTs: 5, price: 3200, unit: 'sack' },
+    { item: 'rice', bought: true, boughtTs: 9 },                    // no price recorded
+    { item: 'rice', bought: false, price: 9999 },
+    { item: 'oil', bought: true, boughtTs: 7, price: 800, deleted: true },
+  ];
+  assert.deepEqual(lastPrice(g, 'rice'), { price: 3200, unit: 'sack', ts: 5 });
+  assert.equal(lastPrice(g, 'oil'), null);
+});
+
+test('linesTotal sums recorded prices', () => {
+  assert.equal(linesTotal([{ price: 3200 }, { price: 800 }, {}]), 4000);
+});
+
+test('visibleTxns: admin all, others only their own', () => {
+  const t = [{ id: 1, by: 'a' }, { id: 2, by: 'b' }];
+  assert.deepEqual(visibleTxns(t, 'admin', 'a').map((x) => x.id), [1, 2]);
+  assert.deepEqual(visibleTxns(t, 'earner', 'a').map((x) => x.id), [1]);
+  assert.deepEqual(visibleTxns(t, 'helper', 'b').map((x) => x.id), [2]);
+});

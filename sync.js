@@ -5,7 +5,7 @@ import { planWrites, snapshotOf } from './syncplan.js';
 export const FB_VERSION = '13.1.0';
 const BASE = `https://www.gstatic.com/firebasejs/${FB_VERSION}`;
 export const FB_FILES = ['app', 'auth', 'firestore'].map((m) => `${BASE}/firebase-${m}.js`);
-const COLLS = ['members', 'catalog', 'grocery', 'txns', 'bills', 'log'];
+const COLLS = ['members', 'catalog', 'grocery', 'txns', 'bills', 'log', 'cash'];
 const FAM_KEY = 'ff-family';
 
 const rand = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');

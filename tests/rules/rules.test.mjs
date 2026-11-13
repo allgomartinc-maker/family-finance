@@ -82,3 +82,9 @@ test('member cannot change owner or join code, or delete the family', async () =
 test('joined phones cannot remove other phones from the family', async () => {
   await assertFails(deleteDoc(doc(as('owner'), 'families/f1/joins/owner')));
 });
+
+test('family phones can write cash handover records; outsiders cannot', async () => {
+  await assertSucceeds(setDoc(doc(as('owner'), 'families/f1/cash/c1'), { id: 'c1', kind: 'give', from: 'a', to: 'b', amount: 5 }));
+  await assertFails(setDoc(doc(as('stranger'), 'families/f1/cash/c2'), { id: 'c2', kind: 'give', from: 'a', to: 'b', amount: 5 }));
+  await assertFails(getDoc(doc(as('stranger'), 'families/f1/cash/c1')));
+});

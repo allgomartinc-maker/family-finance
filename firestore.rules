@@ -8,7 +8,7 @@ service cloud.firestore {
     function isIn(fid) {
       return signedIn() && exists(/databases/$(db)/documents/families/$(fid)/joins/$(request.auth.uid));
     }
-    function dataColl(c) { return c in ['members', 'catalog', 'grocery', 'txns', 'bills', 'log', 'media']; }
+    function dataColl(c) { return c in ['members', 'catalog', 'grocery', 'txns', 'bills', 'log', 'media', 'cash']; }
 
     match /families/{fid} {
       allow create: if signedIn()

@@ -1,7 +1,8 @@
 import { load, save, uid } from './store.js';
-import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER } from './data.js';
+import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF } from './data.js';
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
+  roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -17,6 +18,12 @@ const $cam = document.getElementById('cam');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const me = () => S.members.find((m) => m.id === S.me);
 const isAdmin = () => me()?.role === 'admin';
+const role = () => roleOf(me());
+const ROLE_ICON = { admin: '👑', earner: '💰', helper: '🛒' };
+const unitOf = (x) => UNITS.find((u) => u.id === (x.unit || itemOf(x.item)?.unit || UNIT_OF[x.item])) || UNITS.find((u) => u.id === 'piece');
+const hands = () => cashBalances(S.cash || [], S.txns, S.currency);
+const isToday = (ts) => ts && monthKey(ts) === monthKey(Date.now()) && solarDay(ts) === solarDay(Date.now());
+const unpaidToday = () => S.grocery.filter((x) => x.bought && !x.deleted && x.boughtBy === S.me && !x.paidTx && isToday(x.boughtTs));
 const member = (id) => S.members.find((m) => m.id === id);
 const face = (m, size = 'f40') => !m ? `<span class="face ${size}">❔</span>`
   : `<span class="face ${size}">${m.photo ? `<img src="${m.photo}" alt="">` : esc(m.emoji)}</span>`;
@@ -70,8 +77,9 @@ function top() {
 }
 
 function tabs() {
-  const t = [['grocery', '🛒', 'سودا'], ['money', '💰', 'پول'], ['bills', '🧾', 'بل‌ها']];
-  if (isAdmin()) t.push(['report', '📊', 'گزارش']);
+  const t = [['grocery', '🛒', 'سودا'], ['money', '💰', 'پول'], ['bills', '🧾', 'بل‌ها'], ['report', '📊', 'گزارش']]
+    .filter(([id]) => canTab(role(), id));
+  if (t.length < 2) return '';
   return `<nav class="tabs">${t.map(([id, i, n]) =>
     `<button data-a="tab" data-v="${id}" class="${V.tab === id ? 'on' : ''}">${i}<small>${n}</small></button>`).join('')}</nav>`;
 }
@@ -82,14 +90,18 @@ function groceryView() {
     <button data-a="gmode" data-v="add" class="${V.gmode === 'add' ? 'on' : ''}">➕<small>اضافه</small></button>
     <button data-a="gmode" data-v="list" class="${V.gmode === 'list' ? 'on' : ''}">🧺 ${open.length ? faDigits(open.length) : ''}<small>لست</small></button>
   </div>`;
-  return `<section>${seg}</section><section>${V.gmode === 'add' ? groceryAdd(open) : groceryList()}</section>`;
+  const bal = hands()[S.me];
+  const hand = bal ? `<button class="handcard" data-a="hand" data-v="${S.me}">🤲 <b>${money(bal, S.currency)}</b></button>` : '';
+  return `<section>${hand}${seg}</section><section>${V.gmode === 'add' ? groceryAdd(open) : groceryList()}</section>`;
 }
 
 function groceryAdd(open) {
   const qty = Object.fromEntries(open.map((x) => [x.item, x.qty]));
   const tiles = S.catalog.map((c) => `
-    <button class="tile ${qty[c.id] ? 'sel' : ''}" data-a="${V.edit ? 'rmItem' : 'gadd'}" data-v="${c.id}">
-      ${V.edit ? '<span class="xbtn">✖</span>' : ''}
+    <button class="tile ${qty[c.id] ? 'sel' : ''}" data-a="${V.edit ? 'noop' : 'gadd'}" data-v="${c.id}">
+      ${V.edit ? `<span class="xbtn" data-a="rmItem" data-v="${c.id}">✖</span>
+        <span class="micbtn ${c.voice ? 'has' : ''} ${V.recItem === c.id ? 'rec' : ''}" data-a="itemVoice" data-v="${c.id}">${V.recItem === c.id ? '⏹️' : '🎤'}</span>`
+        : c.voice ? '<span class="spk">🔊</span>' : ''}
       ${qty[c.id] ? `<span class="badge">${faDigits(qty[c.id])}</span>` : ''}
       <span class="pic">${pic(c)}</span><small>${esc(c.name)}</small>
     </button>`).join('');
@@ -113,26 +125,35 @@ function groceryList() {
   const row = (x, isDone) => {
     const c = itemOf(x.item) || { icon: '❓' };
     const cl = member(x.claimedBy);
+    const u = unitOf(x);
+    const lp = isDone ? null : lastPrice(S.grocery, x.item);
     return `<div class="item ${isDone ? 'done' : ''}">
-      <span class="pic">${pic(c)}</span>
+      <span class="pic" data-a="play" data-v="${x.item}">${pic(c)}</span>
       ${isDone ? '' : `<button class="round" data-a="gminus" data-v="${x.id}">➖</button>`}
       <span class="qty">${faDigits(x.qty)}</span>
-      <span class="faces grow">${x.addedBy.map((id) => face(member(id), 'f24')).join('')}</span>
+      <button class="unit" data-a="${isDone ? 'noop' : 'gunit'}" data-v="${x.id}">${u.icon}<small>${u.name}</small></button>
+      <span class="meta grow">
+        <span class="faces">${x.addedBy.map((id) => face(member(id), 'f24')).join('')}</span>
+        ${isDone ? `<button class="lp" data-a="gprice" data-v="${x.id}">${x.price ? money(x.price, x.currency || S.currency) : '💲❔'}</button>`
+          : lp ? `<small class="lp">⏮️ ${money(lp.price, S.currency)}</small>` : ''}
+      </span>
       ${isDone ? `<button class="round" data-a="gundo" data-v="${x.id}">↩️</button>` : `
         <button class="claim ${x.claimedBy === S.me ? 'mine' : ''}" data-a="gclaim" data-v="${x.id}">${cl ? face(cl, 'f56') : '✋'}</button>
         <button class="round ok" data-a="gbought" data-v="${x.id}">✅</button>`}
     </div>`;
   };
-  return `<div class="chips">${chips}</div>
+  const unpaid = unpaidToday();
+  return `<div class="chips">${chips}<button class="chip" data-a="shareList">📤</button></div>
     <div class="list">${rows.length ? rows.map((x) => row(x, false)).join('') : '<div class="empty">🧺</div>'}</div>
-    ${done.length ? `<div class="list" style="margin-top:18px">${done.map((x) => row(x, true)).join('')}</div>
-      <button class="save" data-a="addTx" data-v="out" data-cat="food">🛒💸</button>` : ''}`;
+    ${done.length ? `<div class="list" style="margin-top:18px">${done.map((x) => row(x, true)).join('')}</div>` : ''}
+    ${unpaid.length ? `<button class="save" data-a="shopPay">🛒💸 ${linesTotal(unpaid) ? money(linesTotal(unpaid), S.currency) : ''}</button>` : ''}`;
 }
 
 function moneyView() {
   const m = monthKey(Date.now());
   const t = totals(S.txns, S.currency, m);
-  const list = S.txns.filter((x) => !x.deleted).sort((a, b) => b.ts - a.ts).slice(0, 40);
+  const list = visibleTxns(S.txns.filter((x) => !x.deleted), role(), S.me).sort((a, b) => b.ts - a.ts).slice(0, 40);
+  const hb = Object.entries(hands());
   return `<section>
     <div class="bigbtns">
       <button class="big in" data-a="addTx" data-v="in">⬇️<small>پول آمد</small></button>
@@ -143,6 +164,10 @@ function moneyView() {
       <div class="out-c">⬆️ ${money(t.out, S.currency)}</div>
     </div>
     <div class="row" style="margin-top:8px"><span class="lbl grow">${monthLabel(m)}</span>${curSwitch()}</div>
+    <div class="chips" style="margin-top:10px">
+      <button class="chip give" data-a="give">🤲<b>خرچی</b></button>
+      ${hb.map(([id, v]) => `<button class="chip" data-a="hand" data-v="${id}">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></button>`).join('')}
+    </div>
   </section>
   <section class="list">${list.length ? list.map(txRow).join('') : '<div class="empty">💰</div>'}</section>`;
 }
@@ -156,7 +181,7 @@ const txRow = (x) => `<button class="tx ${x.deleted ? 'del' : ''}" data-a="txVie
   <span class="grow" style="text-align:start">
     <span class="amt ${x.type}-c">${x.type === 'in' ? '⬇️' : '⬆️'} ${money(x.amount, x.currency)}</span><br>
     <span class="lbl">${dayLabel(x.ts)}</span></span>
-  ${x.photo ? '📷' : ''}${x.voice ? '🎤' : ''} ${face(member(x.by), 'f40')}
+  ${x.paidFrom === 'hand' ? '🤲' : ''}${x.photo ? '📷' : ''}${x.voice ? '🎤' : ''} ${face(member(x.by), 'f40')}
 </button>`;
 
 function billsView() {
@@ -207,6 +232,8 @@ function reportView() {
       ${people.map(([id, p]) => `<div class="row">${face(member(id))}
         <span class="grow in-c">⬇️ ${money(p.in, S.currency)}</span><span class="out-c">⬆️ ${money(p.out, S.currency)}</span></div>`).join('') || '<div class="muted">—</div>'}
     </div></div>
+    ${Object.keys(hands()).length ? `<div class="card"><h3>🤲</h3><div class="chips">${Object.entries(hands()).map(([id, v]) =>
+      `<button class="chip" data-a="hand" data-v="${id}">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></button>`).join('')}</div></div>` : ''}
     ${deleted.length ? `<div class="card"><h3>🗑️</h3><div class="list">${deleted.map(txRow).join('')}</div></div>` : ''}
     <div class="card"><h3>🕘</h3><div class="log">
       ${S.log.slice(0, 60).map((l) => `<div class="row">${face(member(l.by), 'f24')}
@@ -240,19 +267,21 @@ function modalView() {
         <div class="grid" style="grid-template-columns:repeat(6,1fr)">${FACES.map((f) =>
           `<button class="tile ${M.emoji === f && !M.photo ? 'sel' : ''}" style="min-height:0;padding:6px" data-a="memoji" data-v="${f}"><span class="pic" style="font-size:36px;height:44px;line-height:44px">${f}</span></button>`).join('')}</div>
         <p><input class="name" id="mname" placeholder="نام (اختیاری)" value="${esc(M.name)}"></p>
-        ${first ? '' : `<div class="seg">
-          <button data-a="mrole" data-v="member" class="${M.role !== 'admin' ? 'on' : ''}">👤<small>عضو</small></button>
+        ${first || M.self ? '' : `<div class="seg">
+          <button data-a="mrole" data-v="helper" class="${M.role === 'helper' ? 'on' : ''}">🛒<small>خریدار</small></button>
+          <button data-a="mrole" data-v="earner" class="${M.role === 'earner' ? 'on' : ''}">💰<small>نان‌آور</small></button>
           <button data-a="mrole" data-v="admin" class="${M.role === 'admin' ? 'on' : ''}">👑<small>مدیر</small></button></div>`}
         <button class="save" data-a="msave" ${M.emoji || M.photo ? '' : 'disabled'}>✅</button>`);
     }
     case 'who':
       return sheet('👤❓', `<div class="grid">${S.members.filter((m) => !m.deleted).map((m) => `
         <button class="tile ${m.id === S.me ? 'sel' : ''}" data-a="iam" data-v="${m.id}">
-          ${m.role === 'admin' ? '<span class="badge">👑</span>' : ''}${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}
+          <span class="badge">${ROLE_ICON[roleOf(m)]}</span>${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}
         <button class="tile add" data-a="newSelf"><span class="pic">➕</span></button></div>`);
     case 'people':
       return sheet('👨‍👩‍👧', `<div class="list">${S.members.filter((m) => !m.deleted).map((m) => `
-        <div class="item">${face(m, 'f56')}<span class="grow">${esc(m.name)} ${m.role === 'admin' ? '👑' : ''}</span>
+        <div class="item">${face(m, 'f56')}<span class="grow">${esc(m.name)}</span>
+          <button class="round" data-a="${m.id === S.me ? 'noop' : 'roleCycle'}" data-v="${m.id}">${ROLE_ICON[roleOf(m)]}</button>
           ${m.id !== S.me && m.role === 'admin' && m.pin ? `<button class="round" data-a="pinReset" data-v="${m.id}">🔒↩️</button>` : ''}
           ${m.id === S.me ? '' : `<button class="round" data-a="rmMember" data-v="${m.id}">🗑️</button>`}</div>`).join('')}</div>
         <button class="save" data-a="newMember">➕👤</button>
@@ -268,6 +297,41 @@ function modalView() {
         <div class="row" style="justify-content:center;margin-top:10px">
           <button class="iconbtn" data-a="pinBack">⌫</button></div>`);
     }
+    case 'price': {
+      const x = S.grocery.find((g) => g.id === M.id);
+      const u = unitOf(x);
+      return sheet(`${pic(itemOf(x.item))} ${faDigits(x.qty)} ${u.icon}`, `${keypad(M.amount, S.currency)}
+        <div class="row" style="gap:10px">
+          <button class="save" style="background:#777" data-a="close">⏭️</button>
+          <button class="save" data-a="priceSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button></div>`);
+    }
+    case 'give':
+      if (!M.to) {
+        return sheet('🤲', `<div class="grid">${S.members.filter((m) => !m.deleted && m.id !== S.me).map((m) => `
+          <button class="tile" data-a="giveTo" data-v="${m.id}">${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}</div>`);
+      }
+      return sheet(`🤲 ${face(member(M.to), 'f40')}`, `${keypad(M.amount, S.currency)}
+        <button class="save" data-a="giveSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+    case 'hand': {
+      const p = M.id;
+      const bal = hands()[p] || 0;
+      const ev = [
+        ...(S.cash || []).filter((c) => !c.deleted && c.currency === S.currency && (c.to === p || c.from === p))
+          .map((c) => ({ ts: c.ts, icon: c.kind === 'give' ? '🤲' : '↩️', amt: c.kind === 'give' && c.to === p ? c.amount : -c.amount, who: c.kind === 'give' ? c.from : c.to })),
+        ...S.txns.filter((x) => !x.deleted && x.by === p && x.paidFrom === 'hand' && x.currency === S.currency)
+          .map((x) => ({ ts: x.ts, icon: catOf('out', x.cat).icon, amt: -x.amount, who: null })),
+      ].sort((a, b) => b.ts - a.ts).slice(0, 30);
+      const canReturn = bal > 0 && (p === S.me || role() !== 'helper');
+      return sheet(`🤲 ${face(member(p), 'f40')}`, `
+        <div class="display">${money(bal, S.currency)}</div>
+        <div class="list" style="margin-top:10px">${ev.map((e) => `<div class="tx"><span class="cat">${e.icon}</span>
+          <span class="grow amt ${e.amt >= 0 ? 'in-c' : 'out-c'}">${money(Math.abs(e.amt), S.currency)}</span>
+          ${e.who ? face(member(e.who), 'f24') : ''}<span class="lbl">${dayLabel(e.ts)}</span></div>`).join('') || '<div class="empty">🤲</div>'}</div>
+        ${canReturn ? `<button class="save" data-a="returnStart">↩️</button>` : ''}`);
+    }
+    case 'return':
+      return sheet(`↩️ ${face(member(M.from), 'f40')}`, `${keypad(M.amount, S.currency)}
+        <button class="save" data-a="returnSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
     case 'invite':
       return sheet('📲', `<div class="card" style="display:grid;justify-items:center">
           <div id="qr" style="width:260px;height:260px;display:grid;place-items:center">⏳</div></div>
@@ -285,6 +349,9 @@ function modalView() {
           <div class="seg" style="width:170px">
             <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">؋</button>
             <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">$</button></div></div>
+        ${M.type === 'out' && (hands()[S.me] || role() === 'helper') ? `<div class="seg" style="margin-bottom:10px">
+          <button data-a="txFrom" data-v="hand" class="${M.paidFrom === 'hand' ? 'on' : ''}">🤲<small>${money(hands()[S.me] || 0, M.currency)}</small></button>
+          <button data-a="txFrom" data-v="home" class="${M.paidFrom !== 'hand' ? 'on' : ''}">🏠</button></div>` : ''}
         ${keypad(M.amount, M.currency)}
         <div class="row" style="margin-top:12px;justify-content:center;gap:14px">
           <button class="iconbtn" data-a="txPhoto">${M.photo ? '✅' : '📷'}</button>
@@ -331,6 +398,8 @@ function render() {
   if (!S.members.length && !V.modal && !V.waiting) V.modal = { kind: 'setup' };
   if (S.members.length && !member(S.me) && !V.modal && !V.waiting) V.modal = { kind: 'who' };
   if (V.waiting && !S.members.length) { $app.innerHTML = '<div class="empty" style="opacity:1">☁️⏳</div>'; return; }
+  if (!canTab(role(), V.tab)) V.tab = 'grocery';
+  S.cash ||= [];
   const body = S.members.length
     ? ({ grocery: groceryView, money: moneyView, bills: billsView, report: reportView }[V.tab] || groceryView)()
     : '';
@@ -366,26 +435,82 @@ async function drawQR(el, text) {
 }
 
 // ---------- voice recording ----------
+// One recorder for receipts' voice notes (30 s) and picture names (3 s). Tap again to stop.
 let rec = null;
-async function toggleVoice() {
-  const M = V.modal;
-  if (rec) { rec.stop(); return; }
+async function record(maxMs, done) {
+  if (rec) { rec.stop(); return false; }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const chunks = [];
-    rec = new MediaRecorder(stream);
-    rec.ondataavailable = (e) => chunks.push(e.data);
-    rec.onstop = () => {
+    const r = new MediaRecorder(stream);
+    rec = r;
+    r.ondataavailable = (e) => chunks.push(e.data);
+    r.onstop = () => {
       stream.getTracks().forEach((t) => t.stop());
-      const r = new FileReader();
-      r.onload = () => { M.voice = r.result; M.recording = false; rec = null; render(); };
-      r.readAsDataURL(new Blob(chunks, { type: rec.mimeType }));
+      rec = null;
+      const fr = new FileReader();
+      fr.onload = () => done(fr.result);
+      fr.readAsDataURL(new Blob(chunks, { type: r.mimeType }));
     };
-    rec.start();
-    M.recording = true;
-    render();
-    setTimeout(() => rec?.state === 'recording' && rec.stop(), 30000);
-  } catch { toast('🎤🚫'); }
+    r.start();
+    setTimeout(() => r.state === 'recording' && r.stop(), maxMs);
+    return true;
+  } catch { toast('🎤🚫'); return false; }
+}
+async function toggleVoice() {
+  const M = V.modal;
+  const started = await record(30000, (d) => { M.voice = safeAudio(d); M.recording = false; render(); });
+  if (started) { M.recording = true; render(); }
+}
+
+// Play a grocery picture's recorded name (fetched from the cloud the first time).
+const voiceCache = new Map();
+async function play(itemId) {
+  const v = itemOf(itemId)?.voice;
+  if (!v) return;
+  let src = v;
+  if (v.startsWith('media:')) {
+    if (!voiceCache.has(v)) voiceCache.set(v, SY ? SY.getMedia(v.slice(6)) : Promise.resolve(null));
+    src = await voiceCache.get(v);
+  }
+  if (!safeAudio(src) || src.startsWith('media:')) return;
+  new Audio(src).play().catch(() => {});
+}
+
+// ---------- share list as a picture (WhatsApp) ----------
+async function shareList() {
+  const lines = groceryFor(S.grocery, V.gfilter);
+  if (!lines.length) { toast('🧺'); return; }
+  const W = 600, RH = 96, k = 2;
+  const c = Object.assign(document.createElement('canvas'), { width: W * k, height: (90 + lines.length * RH + 20) * k });
+  const g = c.getContext('2d');
+  g.scale(k, k);
+  g.fillStyle = '#f6f3ec'; g.fillRect(0, 0, W, c.height);
+  g.direction = 'rtl'; g.textBaseline = 'middle'; g.fillStyle = '#1d1d1d';
+  g.font = '700 34px system-ui, sans-serif'; g.textAlign = 'right';
+  g.fillText(`🛒 سودا · ${dayLabel(Date.now())}`, W - 20, 45);
+  const img = async (src) => { try { return await createImageBitmap(await (await fetch(src)).blob()); } catch { return null; } };
+  for (const [i, x] of lines.entries()) {
+    const y = 90 + i * RH;
+    g.fillStyle = '#fff'; g.beginPath(); g.roundRect(12, y + 4, W - 24, RH - 8, 18); g.fill();
+    const item = itemOf(x.item) || { icon: '❓', name: '' };
+    const u = unitOf(x);
+    if (item.photo && safeImage(item.photo)?.startsWith('data:')) { const b = await img(item.photo); if (b) g.drawImage(b, W - 96, y + 12, 72, 72); }
+    else { g.font = '58px system-ui, sans-serif'; g.textAlign = 'center'; g.fillStyle = '#000'; g.fillText(item.icon, W - 60, y + RH / 2 + 2); }
+    g.textAlign = 'right'; g.fillStyle = '#1d1d1d';
+    g.font = '700 40px system-ui, sans-serif'; g.fillText(faDigits(x.qty), W - 115, y + RH / 2);
+    g.font = '34px system-ui, sans-serif'; g.fillText(u.icon, W - 175, y + RH / 2);
+    g.font = '22px system-ui, sans-serif'; g.fillStyle = '#555'; g.fillText(`${u.name} · ${item.name}`, W - 225, y + RH / 2);
+    const cl = member(x.claimedBy);
+    if (cl && !cl.photo) { g.font = '44px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(cl.emoji, 50, y + RH / 2); }
+  }
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  const file = new File([blob], 'sawda.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'سودا' }); return; }
+  } catch { return; }
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'sawda.png' });
+  a.click();
 }
 
 // ---------- actions ----------
@@ -449,11 +574,16 @@ const A = {
   })),
   pinTap: (v) => pinTap(+v),
   pinBack: () => { V.modal.seq.pop(); render(); },
-  newSelf: () => { V.modal = { kind: 'member', role: 'member', self: true }; render(); },
+  newSelf: () => { V.modal = { kind: 'member', role: 'helper', self: true }; render(); },
+  roleCycle: (v) => requireAdmin(() => commit(() => {
+    const m = member(v);
+    const next = { helper: 'earner', earner: 'admin', admin: 'helper' }[roleOf(m)];
+    m.role = next; log('role', ROLE_ICON[next], m.name); V.modal = { kind: 'people' };
+  })),
   invite: () => { V.modal = { kind: 'invite' }; render(); },
   shareLink: () => navigator.share?.({ title: 'حساب خانواده', url: SY.inviteLink() }).catch(() => {}),
   copyLink: async () => { try { await navigator.clipboard.writeText(SY.inviteLink()); toast('📋✅'); } catch { toast('📋❌'); } },
-  newMember: () => { V.modal = { kind: 'member', role: 'member' }; render(); },
+  newMember: () => { V.modal = { kind: 'member', role: 'helper' }; render(); },
   rmMember: (v) => commit(() => { member(v).deleted = true; log('rmMember', '👤🗑️', member(v).name); }),
   memoji: (v) => { V.modal.emoji = v; V.modal.photo = null; keepName('mname'); render(); },
   mphoto: () => { keepName('mname'); takePhoto(240, (p) => { V.modal.photo = p; render(); }); },
@@ -461,7 +591,7 @@ const A = {
   msave: () => {
     keepName('mname');
     const M = V.modal, setup = M.kind === 'setup';
-    const m = { id: uid(), emoji: M.emoji || '🙂', photo: M.photo || null, name: M.name || '', role: setup ? 'admin' : M.role, ts: Date.now() };
+    const m = { id: uid(), emoji: M.emoji || '🙂', photo: M.photo || null, name: M.name || '', role: setup ? 'admin' : M.self ? 'helper' : M.role, ts: Date.now() };
     commit(() => {
       S.members.push(m);
       if (setup || M.self) { S.me = m.id; localStorage.setItem('ff-me', m.id); }
@@ -472,7 +602,60 @@ const A = {
 
   gmode: (v) => { V.gmode = v; V.edit = false; render(); },
   gfilter: (v) => { V.gfilter = v; render(); },
+  noop: () => {},
+  play: (v) => play(v),
+  shareList: () => shareList(),
+  gunit: (v) => commit(() => {
+    const x = S.grocery.find((g) => g.id === v);
+    const i = UNITS.findIndex((u) => u.id === unitOf(x).id);
+    x.unit = UNITS[(i + 1) % UNITS.length].id;
+  }),
+  gprice: (v) => { V.modal = { kind: 'price', id: v, amount: String(S.grocery.find((g) => g.id === v)?.price || '') }; render(); },
+  priceSave: () => commit(() => {
+    const x = S.grocery.find((g) => g.id === V.modal.id);
+    x.price = +V.modal.amount; x.currency = S.currency; x.unit = unitOf(x).id;
+    log('price', '💲', `${itemOf(x.item)?.name} ${money(x.price, x.currency)}`);
+    V.modal = null;
+  }),
+  shopPay: () => {
+    const lines = unpaidToday();
+    const fromHand = !!hands()[S.me] || role() === 'helper';
+    V.modal = { kind: 'tx', type: 'out', cat: 'food', amount: String(linesTotal(lines) || ''), currency: S.currency,
+      paidFrom: fromHand ? 'hand' : null, lines: lines.map((x) => x.id) };
+    render();
+  },
+  txFrom: (v) => { V.modal.paidFrom = v === 'hand' ? 'hand' : null; render(); },
+  give: () => { V.modal = { kind: 'give', amount: '' }; render(); },
+  giveTo: (v) => { V.modal.to = v; render(); },
+  giveSave: () => commit(() => {
+    const M = V.modal;
+    S.cash.push({ id: uid(), kind: 'give', from: S.me, to: M.to, amount: +M.amount, currency: S.currency, by: S.me, ts: Date.now() });
+    log('give', '🤲', `${member(M.to)?.name || ''} ${money(+M.amount, S.currency)}`);
+    V.modal = null;
+    toast('🤲✅');
+  }),
+  hand: (v) => { V.modal = { kind: 'hand', id: v }; render(); },
+  returnStart: () => { V.modal = { kind: 'return', from: V.modal.id, amount: '' }; render(); },
+  returnSave: () => commit(() => {
+    const M = V.modal;
+    const lastGive = (S.cash || []).filter((c) => !c.deleted && c.kind === 'give' && c.to === M.from).sort((a, b) => b.ts - a.ts)[0];
+    S.cash.push({ id: uid(), kind: 'return', from: M.from, to: lastGive?.from || S.me, amount: +M.amount, currency: S.currency, by: S.me, ts: Date.now() });
+    log('return', '↩️', `${member(M.from)?.name || ''} ${money(+M.amount, S.currency)}`);
+    V.modal = { kind: 'hand', id: M.from };
+  }),
+  itemVoice: (v) => {
+    if (V.recItem && V.recItem !== v) return;
+    if (V.recItem === v) { record(0); return; }
+    record(3000, (d) => {
+      V.recItem = null;
+      const safe = safeAudio(d);
+      if (safe) commit(() => { itemOf(v).voice = safe; log('voice', '🎤', itemOf(v)?.name); });
+      else render();
+      if (safe) setTimeout(() => play(v), 200);
+    }).then((ok) => { if (ok) { V.recItem = v; render(); } });
+  },
   gadd: (v, el) => {
+    play(v);
     commit(() => { S.grocery = addGrocery(S.grocery, v, S.me, Date.now(), uid); log('gadd', '🛒➕', itemOf(v)?.name); });
     document.querySelector(`[data-a="gadd"][data-v="${v}"]`)?.classList.add('pop');
     navigator.vibrate?.(20);
@@ -489,8 +672,9 @@ const A = {
   },
   gbought: (v) => commit(() => {
     const x = S.grocery.find((g) => g.id === v);
-    x.bought = true; x.boughtBy = S.me; x.boughtTs = Date.now();
+    x.bought = true; x.boughtBy = S.me; x.boughtTs = Date.now(); x.unit = unitOf(x).id;
     log('gbought', '✅', itemOf(x.item)?.name);
+    V.modal = { kind: 'price', id: v, amount: '' };   // ask what it cost (⏭️ to skip)
   }),
   gundo: (v) => commit(() => { const x = S.grocery.find((g) => g.id === v); x.bought = false; }),
   editCat: () => (V.edit ? (V.edit = false, render()) : requireAdmin(() => { V.edit = true; V.modal = null; render(); })),
@@ -509,7 +693,7 @@ const A = {
   },
 
   cur: (v) => commit(() => { S.currency = v; }),
-  addTx: (v, el) => { V.modal = { kind: 'tx', type: v, cat: el.dataset.cat || null, amount: '', currency: S.currency }; render(); },
+  addTx: (v, el) => { V.modal = { kind: 'tx', type: v, cat: el.dataset.cat || null, amount: '', currency: S.currency, paidFrom: null }; render(); },
   txCat: (v) => { V.modal.cat = v; render(); },
   txCur: (v) => { V.modal.currency = v; render(); },
   key: (k) => {
@@ -523,9 +707,11 @@ const A = {
   txSave: () => {
     const M = V.modal;
     const x = { id: uid(), type: M.type, cat: M.cat, amount: +M.amount, currency: M.currency, by: S.me,
-      ts: Date.now(), photo: M.photo || null, voice: M.voice || null, billId: M.billId || null };
+      ts: Date.now(), photo: M.photo || null, voice: M.voice || null, billId: M.billId || null,
+      paidFrom: M.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null };
     commit(() => {
       S.txns.push(x);
+      for (const id of M.lines || []) { const g = S.grocery.find((l) => l.id === id); if (g) g.paidTx = x.id; }
       log('tx', `${M.type === 'in' ? '⬇️' : '⬆️'}${catOf(M.type, M.cat).icon}`, money(x.amount, x.currency));
       V.modal = null;
     });
@@ -605,7 +791,7 @@ const COLL_SORT = {
 async function connect() {
   if (!cfg || SY) return;
   const joining = location.hash.startsWith('#join=');
-  if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [] }; V.waiting = true; V.modal = null; render(); }
+  if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [], cash: [] }; V.waiting = true; V.modal = null; render(); }
   try {
     SY = await startSyncLazy();
     if (emulator) window.__sync = SY;

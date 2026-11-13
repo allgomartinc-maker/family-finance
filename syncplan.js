@@ -3,7 +3,7 @@
 
 const INC = { grocery: ['qty'] };            // numbers that several phones may change at once
 const UNION = { grocery: ['addedBy'] };      // arrays that only grow
-const MEDIA = { txns: ['photo', 'voice'] };  // big data URLs → separate media docs
+const MEDIA = { txns: ['photo', 'voice'], catalog: ['voice'] };  // big data URLs → separate media docs
 const APPEND_ONLY = ['log'];
 
 const clean = (o) => JSON.parse(JSON.stringify(o)); // drops undefined

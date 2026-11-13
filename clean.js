@@ -11,8 +11,9 @@ export const isId = (v) => typeof v === 'string' && ID.test(v);
 export const safeImage = (v) => (typeof v === 'string' && (IMG.test(v) || MEDIA.test(v)) ? v : null);
 export const safeAudio = (v) => (typeof v === 'string' && (AUDIO.test(v) || MEDIA.test(v)) ? v : null);
 
-const REFS = ['by', 'claimedBy', 'boughtBy', 'deletedBy', 'billId'];
-const NUMS = ['qty', 'amount', 'dueDay', 'ts', 'boughtTs', 'ord'];
+const REFS = ['by', 'claimedBy', 'boughtBy', 'deletedBy', 'billId', 'paidTx', 'from', 'to'];
+const UNIT_IDS = ['kg', 'sack', 'tin', 'bottle', 'pack', 'piece', 'dozen', 'liter'];
+const NUMS = ['qty', 'amount', 'dueDay', 'ts', 'boughtTs', 'ord', 'price'];
 const TEXT = { name: 60, extra: 60, action: 30, emoji: 16, icon: 16 };
 
 export function cleanRecord(coll, rec) {
@@ -36,7 +37,14 @@ export function cleanRecord(coll, rec) {
     if (has('cat') && !isId(r.cat)) r.cat = 'other';
   }
   if (coll === 'bills' && !isId(r.kind)) return null;
-  if (coll === 'members' && has('role') && r.role !== 'admin') r.role = 'member';
+  if (coll === 'members' && has('role') && !['admin', 'earner', 'helper', 'member'].includes(r.role)) r.role = 'helper';
+  if (has('unit') && !UNIT_IDS.includes(r.unit)) r.unit = null;
+  if (has('paidFrom') && r.paidFrom !== 'hand') r.paidFrom = null;
+  if (coll === 'cash') {
+    if (r.kind !== 'give' && r.kind !== 'return') return null;
+    if (!isId(r.from) || !isId(r.to)) return null;
+    if (r.currency !== 'AFN' && r.currency !== 'USD') r.currency = 'AFN';
+  }
   if (has('pin')) {
     const p = r.pin;
     r.pin = p && typeof p === 'object' && /^[0-9a-f]{32}$/.test(p.salt) && /^[0-9a-f]{64}$/.test(p.hash)
