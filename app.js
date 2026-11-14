@@ -61,11 +61,16 @@ function log(action, icon, extra = '') {
   S.log.length = Math.min(S.log.length, 500);
 }
 
+// Saving writes the whole family state to the phone; do it once after a burst of taps.
+let saveTimer = null;
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; save(S); }, 300); }
+function saveNow() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } return save(S); }
+window.addEventListener('pagehide', () => { if (saveTimer) saveNow(); });
 async function commit(fn) {
   fn();
   render();
   SY?.push();
-  await save(S);
+  saveSoon();
 }
 
 // Camera / gallery → compressed JPEG data URL
@@ -420,7 +425,7 @@ function modalView() {
       return sheet(`<span class="headpic">${pic(itemOf(x.item))}</span> ${faDigits(x.qty)} ${unitPic(u)}`, `${keypad(M.amount, S.currency)}
         <div class="row" style="gap:10px">
           <button class="save" style="background:#777" data-a="close">⏭️ بعداً</button>
-          <button class="save" data-a="priceSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button></div>`);
+          <button class="save" data-a="priceSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button></div>`);
     }
     case 'give':
       if (!M.to) {
@@ -428,7 +433,7 @@ function modalView() {
           <button class="tile" data-a="giveTo" data-v="${m.id}">${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}</div>`);
       }
       return sheet(`🤲 ${face(member(M.to), 'f40')}`, `${keypad(M.amount, S.currency)}
-        <button class="save" data-a="giveSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="giveSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'hand': {
       const p = M.id;
       const bal = hands()[p] || 0;
@@ -448,7 +453,7 @@ function modalView() {
     }
     case 'return':
       return sheet(`↩️ ${face(member(M.from), 'f40')}`, `${keypad(M.amount, S.currency)}
-        <button class="save" data-a="returnSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="returnSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'contact':
       return sheet('➕👤', `
         <div class="row" style="justify-content:center;margin-bottom:12px">
@@ -466,7 +471,7 @@ function modalView() {
           <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">افغانی</button>
           <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">دالر</button></div></div>
         ${keypad(M.amount, M.currency)}
-        <button class="save" data-a="loanSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="loanSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     }
     case 'loan': {
       const l = loansView(S.loans, (S.loans.find((r) => r.id === M.id) || {}).currency || S.currency).loans.find((r) => r.id === M.id);
@@ -483,14 +488,14 @@ function modalView() {
     }
     case 'loanPay':
       return sheet('💵', `${keypad(M.amount, M.currency)}
-        <button class="save" data-a="loanPaySave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="loanPaySave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'jarNew':
       if (!M.goal) {
         return sheet('➕🫙', `<div class="grid">${GOALS.map((g) =>
           `<button class="tile" data-a="jarGoal" data-v="${g.id}"><span class="pic">${g.icon}</span><small>${g.name}</small></button>`).join('')}</div>`);
       }
       return sheet(`${goalOf(M.goal).icon} 🎯`, `${keypad(M.amount, S.currency)}
-        <button class="save" data-a="jarSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="jarSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'jar': {
       const j = S.jars.find((r) => r.id === M.id);
       const saved = jarTotals(S.jars)[j.id] || 0;
@@ -510,7 +515,7 @@ function modalView() {
     }
     case 'jarMove':
       return sheet(`${goalOf(S.jars.find((r) => r.id === M.id)?.goal).icon} ${M.dir === 'in' ? '➕' : '➖'}`, `${keypad(M.amount, S.currency)}
-        <button class="save ${M.dir === 'out' ? 'danger' : ''}" data-a="jarMoveSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+        <button class="save ${M.dir === 'out' ? 'danger' : ''}" data-a="jarMoveSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'pocket': {
       const bal = pocketBalance(P.entries, S.currency);
       const list = P.entries.filter((e) => !e.deleted && e.currency === S.currency).sort((a, b) => b.ts - a.ts).slice(0, 40);
@@ -532,7 +537,7 @@ function modalView() {
         <div class="chips" style="justify-content:center;flex-wrap:wrap">${icons.map(([ic, nm]) =>
           `<button class="chip col ${M.icon === ic ? 'on' : ''}" data-a="pocketIcon" data-v="${ic}"><span class="row1">${ic}</span><span class="lab">${nm}</span></button>`).join('')}</div>
         ${keypad(M.amount, S.currency)}
-        <button class="save" data-a="pocketSave" ${+M.amount > 0 ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="pocketSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     }
     case 'summary': {
       V.month ||= monthKey(Date.now());
@@ -612,7 +617,7 @@ function modalView() {
           <button class="iconbtn" data-a="txVoice" style="${M.recording ? 'background:var(--out)' : ''}">${L(M.recording ? '⏹️' : M.voice ? '✅' : '🎤', M.recording ? 'ایستاد' : 'صدا')}</button>
         </div>
         ${M.photo ? `<img class="photo-prev" style="margin-top:10px;max-height:160px" src="${M.photo}" alt="">` : ''}
-        <button class="save" data-a="txSave" ${+M.amount > 0 && !M.recording ? '' : 'disabled'}>✅</button>`);
+        <button class="save" data-a="txSave" ${+M.amount > 0 && !M.recording ? '' : 'disabled'}>✅ ثبت</button>`);
     }
     case 'txView': {
       const x = S.txns.find((t) => t.id === M.id);
@@ -826,6 +831,7 @@ async function pinTap(i) {
 }
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) return;
+  saveNow();   // app going to the background: write pending changes now
   unlockedUntil = 0;
   pocketOpen = false;
   if (['pocket', 'pocketAdd'].includes(V.modal?.kind) || V.modal?.target === 'pocket') { V.modal = null; render(); }
@@ -1244,7 +1250,7 @@ async function startSyncLazy() {
         if (!member(S.me)) V.modal = { kind: 'who' };
       }
       render();
-      save(S);
+      saveSoon();
     },
   });
 }

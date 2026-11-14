@@ -1,7 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#1f7a4d"/>
-  <path d="M256 104 92 236h44v168h240V236h44z" fill="#f6f3ec"/>
-  <rect x="210" y="300" width="92" height="104" rx="10" fill="#1f7a4d"/>
-  <circle cx="256" cy="232" r="44" fill="#e0a100"/>
-  <text x="256" y="250" font-size="52" font-family="Arial" font-weight="700" text-anchor="middle" fill="#1f7a4d">؋</text>
+  <defs><clipPath id="r"><rect width="512" height="512" rx="112"/></clipPath></defs>
+  <g clip-path="url(#r)">
+  <rect width="512" height="512" fill="#1f3c88"/>
+  <path d="M0 430h512v82H0z" fill="#132a66"/>
+  <g fill="#e8a317"><path d="M64 471l22-22 22 22-22 22z"/><path d="M160 471l22-22 22 22-22 22z"/><path d="M256 471l22-22 22 22-22 22z"/><path d="M352 471l22-22 22 22-22 22z"/><path d="M448 471l22-22 22 22-22 22z"/></g>
+  <path d="M256 92 96 222h40v164h240V222h40z" fill="#ffffff"/>
+  <rect x="216" y="290" width="80" height="96" rx="10" fill="#1f3c88"/>
+  <circle cx="256" cy="222" r="42" fill="#e8a317"/>
+  <circle cx="256" cy="222" r="24" fill="none" stroke="#ffffff" stroke-width="8"/>
+  </g>
 </svg>
