@@ -43,6 +43,9 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html { touch-action: manipulation; } /* no double-tap zoom when tapping + fast */
+/* Holding a button must not select text or open the iPhone Copy/Look Up menu. Typing boxes still can. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 html, body { margin: 0; background: var(--plaster); color: var(--ink); overflow-x: hidden;
   font: 400 17px/1.5 var(--f-text); -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
