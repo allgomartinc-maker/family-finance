@@ -298,3 +298,8 @@ input.name:focus { border-color: var(--lapis); outline: none; }
 /* ---------- toast ---------- */
 .toast { position: fixed; bottom: 104px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--lapis-ink); color: #fff;
   font-size: 28px; padding: 8px 22px; border-radius: 26px; box-shadow: 0 8px 24px rgba(19, 42, 102, .35); animation: up .2s ease; }
+
+/* buy the whole list, then one total */
+.save.buyall { background: var(--pistachio-soft); color: var(--pistachio); border: 2px solid var(--pistachio); box-shadow: none; margin-top: 12px; }
+.save.paytrip { background: var(--pistachio); display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; }
+.save.paytrip span { font-size: 17px; }

@@ -76,9 +76,13 @@ export const CUR_NAME = { AFN: 'افغانی', USD: 'دالر' };
 export const money = (n, cur) => `${nf.format(n)} ${CUR_NAME[cur] || CUR_NAME.AFN}`;
 
 // ---------- roles ----------
-// admin: everything (PIN) · earner: groceries, own money, bills · helper: groceries only.
-export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : m?.role === 'earner' || m?.role === 'member' ? 'earner' : 'helper');
-const TABS = { admin: ['grocery', 'money', 'loans', 'bills', 'report'], earner: ['grocery', 'money', 'loans', 'bills'], helper: ['grocery'] };
+// admin: everything (PIN) · earner: groceries, own money, bills · helper: groceries only ·
+// orderer: only says what the home needs (add to list, pantry levels); never buys or sees money.
+export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : m?.role === 'earner' || m?.role === 'member' ? 'earner'
+  : m?.role === 'orderer' ? 'orderer' : 'helper');
+const TABS = { admin: ['grocery', 'money', 'loans', 'bills', 'report'], earner: ['grocery', 'money', 'loans', 'bills'], helper: ['grocery'], orderer: ['grocery'] };
+export const canBuy = (role) => role !== 'orderer';
+export const nextRole = (role) => ({ orderer: 'helper', helper: 'earner', earner: 'admin', admin: 'orderer' }[role] || 'helper');
 export const canTab = (role, tab) => (TABS[role] || TABS.helper).includes(tab);
 export const visibleTxns = (txns, role, me) => (role === 'admin' ? txns : txns.filter((x) => x.by === me));
 
@@ -108,6 +112,16 @@ export function lastPrice(grocery, item) {
   return hit ? { price: hit.price, unit: hit.unit, ts: hit.boughtTs } : null;
 }
 export const linesTotal = (lines) => lines.reduce((s, x) => s + (x.price > 0 ? x.price : 0), 0);
+
+// Mark open list lines as bought in one go; the total cost is asked once afterwards. Returns how many.
+export function buyLines(grocery, ids, by, ts) {
+  let n = 0;
+  for (const x of grocery) {
+    if (!ids.includes(x.id) || x.bought || x.deleted) continue;
+    x.bought = true; x.boughtBy = by; x.boughtTs = ts; n++;
+  }
+  return n;
+}
 
 // ---------- qarz (family loans) ----------
 // records: { kind:'loan', dir:'lent'|'borrowed', who, amount, currency, ts, by } and { kind:'pay', loanId, amount }.

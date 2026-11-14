@@ -301,3 +301,38 @@ test('pop-up slides in only when it first opens or changes kind', () => {
   assert.equal(sheetEnters('tx', null), false);      // closed
   assert.equal(sheetEnters(null, null), false);
 });
+
+// ---------- orderer: only says what the home needs ----------
+import { canBuy, nextRole } from '../logic.js';
+
+test('orderer role: grocery tab only, cannot buy or see money', () => {
+  assert.equal(roleOf({ role: 'orderer' }), 'orderer');
+  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'report'].filter((t) => canTab('orderer', t)), ['grocery']);
+  assert.equal(canBuy('orderer'), false);
+  for (const r of ['admin', 'earner', 'helper']) assert.equal(canBuy(r), true);
+});
+
+test('admin role button cycles through every role, orderer included', () => {
+  assert.equal(nextRole('orderer'), 'helper');
+  assert.equal(nextRole('helper'), 'earner');
+  assert.equal(nextRole('earner'), 'admin');
+  assert.equal(nextRole('admin'), 'orderer');
+});
+
+// ---------- buy everything, then one total ----------
+import { buyLines } from '../logic.js';
+
+test('buyLines marks every open line bought by me, skips done or deleted ones', () => {
+  const g = [
+    { id: 'a', item: 'rice', qty: 1, addedBy: ['x'] },
+    { id: 'b', item: 'oil', qty: 2, addedBy: ['x'] },
+    { id: 'c', item: 'tea', qty: 1, addedBy: ['x'], bought: true, boughtBy: 'y', boughtTs: 5 },
+    { id: 'd', item: 'salt', qty: 1, addedBy: ['x'], deleted: true },
+  ];
+  const n = buyLines(g, ['a', 'b', 'c', 'd'], 'me', 100);
+  assert.equal(n, 2);
+  assert.deepEqual(g.filter((x) => x.bought && x.boughtBy === 'me').map((x) => x.id), ['a', 'b']);
+  assert.equal(g[0].boughtTs, 100);
+  assert.equal(g[2].boughtBy, 'y');      // already bought by someone else: untouched
+  assert.ok(!g[3].bought);
+});

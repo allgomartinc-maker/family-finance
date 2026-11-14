@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, CO
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -16,12 +16,24 @@ const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
 
 // ---------- helpers ----------
+function markBought(ids) {
+  const now = Date.now();
+  const lines = S.grocery.filter((x) => ids.includes(x.id) && !x.bought && !x.deleted);
+  for (const x of lines) x.unit = unitOf(x).id;
+  buyLines(S.grocery, ids, S.me, now);
+  for (const x of lines) {
+    const ci = itemOf(x.item);
+    if (ci?.stock) { ci.stock = 'full'; ci.stockBy = S.me; ci.stockTs = now; }   // bought → full at home
+    log('gbought', '✅', ci?.name);
+  }
+}
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const me = () => S.members.find((m) => m.id === S.me);
 const isAdmin = () => me()?.role === 'admin';
 const role = () => roleOf(me());
-const ROLE_ICON = { admin: '👑', earner: '💰', helper: '🛒' };
-const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور', helper: 'خریدار' };
+const ROLE_ICON = { admin: '👑', earner: '💰', helper: '🛒', orderer: '🙋' };
+const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور', helper: 'خریدار', orderer: 'سفارش' };
+const buyer = () => canBuy(role()); // orderer only asks; never buys or handles money
 const TAB_NAME = { grocery: 'سودا', money: 'پول', loans: 'قرض', bills: 'بل‌ها', report: 'گزارش' };
 // Picture + its Dari word underneath: people who read can read it and teach the picture to those who can't.
 const L = (icon, word) => `${icon}<span class="lab">${word}</span>`;
@@ -114,7 +126,7 @@ function groceryView() {
     <button data-a="gmode" data-v="list" class="${V.gmode === 'list' ? 'on' : ''}">🧺 ${open.length ? faDigits(open.length) : ''}<small>لست</small></button>
     <button data-a="gmode" data-v="pantry" class="${V.gmode === 'pantry' ? 'on' : ''}">🏺<small>خانه</small></button>
   </div>`;
-  const bal = hands()[S.me];
+  const bal = buyer() && hands()[S.me];
   const hand = bal ? `<button class="handcard" data-a="hand" data-v="${S.me}">🤲 <span class="lab2">خرچی در دست من</span> <b>${money(bal, S.currency)}</b></button>` : '';
   const bodyG = V.gmode === 'add' ? groceryAdd(open) : V.gmode === 'pantry' ? pantryView() : groceryList();
   return `<section>${hand}${seg}</section><section>${bodyG}</section>`;
@@ -161,7 +173,7 @@ function groceryList() {
     const c = itemOf(x.item) || { icon: '❓' };
     const cl = member(x.claimedBy);
     const u = unitOf(x);
-    const lp = isDone ? null : lastPrice(S.grocery, x.item);
+    const lp = isDone || !buyer() ? null : lastPrice(S.grocery, x.item);
     return `<div class="item ${isDone ? 'done' : ''}">
       <span class="pic" data-a="play" data-v="${x.item}">${pic(c)}</span>
       ${isDone ? '' : `<button class="round" data-a="gminus" data-v="${x.id}">${L('➖', 'کم')}</button>`}
@@ -169,19 +181,21 @@ function groceryList() {
       <button class="unit" data-a="${isDone ? 'noop' : 'gunit'}" data-v="${x.id}">${unitPic(u)}<small>${u.name}</small></button>
       <span class="meta grow">
         <span class="faces">${x.addedBy.map((id) => face(member(id), 'f24')).join('')}</span>
-        ${isDone ? `<button class="lp" data-a="gprice" data-v="${x.id}">${x.price ? money(x.price, x.currency || S.currency) : '💲❔'}</button>`
+        ${isDone ? (x.price ? `<small class="lp">${money(x.price, x.currency || S.currency)}</small>` : '')
           : lp ? `<small class="lp">قیمت قبلی ${money(lp.price, S.currency)}</small>` : ''}
       </span>
-      ${isDone ? `<button class="round" data-a="gundo" data-v="${x.id}">${L('↩️', 'پس')}</button>` : `
+      ${!buyer() ? (cl ? `<span class="claim">${face(cl, 'f40')}<span class="lab">${esc(cl.name) || 'گرفته'}</span></span>` : '')
+        : isDone ? `<button class="round" data-a="gundo" data-v="${x.id}">${L('↩️', 'پس')}</button>` : `
         <button class="claim ${x.claimedBy === S.me ? 'mine' : ''}" data-a="gclaim" data-v="${x.id}">${cl ? face(cl, 'f40') : '✋'}<span class="lab">${cl ? esc(cl.name) || 'گرفته' : 'من می‌خرم'}</span></button>
         <button class="round ok" data-a="gbought" data-v="${x.id}">${L('✅', 'خریدم')}</button>`}
     </div>`;
   };
-  const unpaid = unpaidToday();
+  const unpaid = buyer() ? unpaidToday() : [];
   return `<div class="chips">${chips}<button class="chip col" data-a="shareList"><span class="row1">📤</span><span class="lab">فرستادن</span></button></div>
     <div class="list">${rows.length ? rows.map((x) => row(x, false)).join('') : '<div class="empty">🧺</div>'}</div>
-    ${done.length ? `<div class="list" style="margin-top:18px">${done.map((x) => row(x, true)).join('')}</div>` : ''}
-    ${unpaid.length ? `<button class="save" data-a="shopPay">🛒💸 پول سودا ${linesTotal(unpaid) ? money(linesTotal(unpaid), S.currency) : ''}</button>` : ''}`;
+    ${buyer() && rows.length > 1 ? `<button class="save buyall" data-a="gbuyAll">✅✅ همه را خریدم</button>` : ''}
+    ${done.length && buyer() ? `<div class="list" style="margin-top:18px">${done.map((x) => row(x, true)).join('')}</div>` : ''}
+    ${unpaid.length ? `<button class="save paytrip" data-a="shopPay">🛒💸 <span>${faDigits(unpaid.length)} چیز خریدی · چند پول دادی؟</span></button>` : ''}`;
 }
 
 function moneyView() {
@@ -390,6 +404,7 @@ function modalView() {
           `<button class="tile ${M.emoji === f && !M.photo ? 'sel' : ''}" style="min-height:0;padding:6px" data-a="memoji" data-v="${f}"><span class="pic" style="font-size:36px;height:44px;line-height:44px">${f}</span></button>`).join('')}</div>
         <p><input class="name" id="mname" placeholder="نام (اختیاری)" value="${esc(M.name)}"></p>
         ${first || M.self ? '' : `<div class="seg">
+          <button data-a="mrole" data-v="orderer" class="${M.role === 'orderer' ? 'on' : ''}">🙋<small>سفارش</small></button>
           <button data-a="mrole" data-v="helper" class="${M.role === 'helper' ? 'on' : ''}">🛒<small>خریدار</small></button>
           <button data-a="mrole" data-v="earner" class="${M.role === 'earner' ? 'on' : ''}">💰<small>نان‌آور</small></button>
           <button data-a="mrole" data-v="admin" class="${M.role === 'admin' ? 'on' : ''}">👑<small>مدیر</small></button></div>`}
@@ -861,7 +876,7 @@ const A = {
   newSelf: () => { V.modal = { kind: 'member', role: 'helper', self: true }; render(); },
   roleCycle: (v) => requireAdmin(() => commit(() => {
     const m = member(v);
-    const next = { helper: 'earner', earner: 'admin', admin: 'helper' }[roleOf(m)];
+    const next = nextRole(roleOf(m));
     m.role = next; log('role', ROLE_ICON[next], m.name); V.modal = { kind: 'people' };
   })),
   invite: () => { V.modal = { kind: 'invite' }; render(); },
@@ -924,14 +939,14 @@ const A = {
     const i = UNITS.findIndex((u) => u.id === unitOf(x).id);
     x.unit = UNITS[(i + 1) % UNITS.length].id;
   }),
-  gprice: (v) => { V.modal = { kind: 'price', id: v, amount: String(S.grocery.find((g) => g.id === v)?.price || '') }; render(); },
+  gprice: (v) => { if (!buyer()) return; V.modal = { kind: 'price', id: v, amount: String(S.grocery.find((g) => g.id === v)?.price || '') }; render(); },
   priceSave: () => commit(() => {
     const x = S.grocery.find((g) => g.id === V.modal.id);
     x.price = +V.modal.amount; x.currency = S.currency; x.unit = unitOf(x).id;
     log('price', '💲', `${itemOf(x.item)?.name} ${money(x.price, x.currency)}`);
     V.modal = null;
   }),
-  shopPay: () => {
+  shopPay: () => { if (!buyer()) return;
     const lines = unpaidToday();
     const fromHand = !!hands()[S.me] || role() === 'helper';
     V.modal = { kind: 'tx', type: 'out', cat: 'food', amount: String(linesTotal(lines) || ''), currency: S.currency,
@@ -979,20 +994,15 @@ const A = {
     if (--x.qty <= 0) x.deleted = true;
     log('gminus', '🛒➖', itemOf(x.item)?.name);
   }),
-  gclaim: (v) => {
+  gclaim: (v) => { if (!buyer()) return;
     const x = S.grocery.find((g) => g.id === v);
     if (x.claimedBy && x.claimedBy !== S.me && !isAdmin()) return toast('✋❌');
     commit(() => { x.claimedBy = x.claimedBy === S.me ? null : S.me; log('gclaim', '✋', itemOf(x.item)?.name); });
   },
-  gbought: (v) => commit(() => {
-    const x = S.grocery.find((g) => g.id === v);
-    x.bought = true; x.boughtBy = S.me; x.boughtTs = Date.now(); x.unit = unitOf(x).id;
-    const ci = itemOf(x.item);
-    if (ci?.stock) { ci.stock = 'full'; ci.stockBy = S.me; ci.stockTs = Date.now(); }   // bought → full at home
-    log('gbought', '✅', itemOf(x.item)?.name);
-    V.modal = { kind: 'price', id: v, amount: '' };   // ask what it cost (⏭️ to skip)
-  }),
-  gundo: (v) => commit(() => { const x = S.grocery.find((g) => g.id === v); x.bought = false; }),
+  // ✅ just marks it bought; the money is asked once for the whole trip (🛒💸 button under the list).
+  gbought: (v) => buyer() && commit(() => markBought([v])),
+  gbuyAll: () => buyer() && commit(() => markBought(groceryFor(S.grocery, V.gfilter).map((x) => x.id))),
+  gundo: (v) => buyer() && commit(() => { const x = S.grocery.find((g) => g.id === v); x.bought = false; }),
   editCat: () => (V.edit ? (V.edit = false, render()) : requireAdmin(() => { V.edit = true; V.modal = null; render(); })),
   rmItem: (v) => commit(() => { log('rmItem', '🛒🗑️', itemOf(v)?.name); S.catalog = S.catalog.filter((c) => c.id !== v); }),
   newItem: () => { V.modal = { kind: 'item', name: '', q: '' }; render(); },

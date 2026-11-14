@@ -122,3 +122,7 @@ test('own money categories: type in/out, short name and icon', () => {
   assert.equal(cleanRecord('cats', { id: 'c1', type: 'x', icon: '🧶', name: 'a' }), null);
   assert.equal(cleanRecord('cats', { id: 'c1', type: 'out', icon: '<img src=x onerror=1>xxxxxxxxxxxxxxx', name: 'a' }).icon.length, 16);
 });
+
+test('member role orderer is kept from the cloud', () => {
+  assert.equal(cleanRecord('members', { id: 'm1', role: 'orderer' }).role, 'orderer');
+});
