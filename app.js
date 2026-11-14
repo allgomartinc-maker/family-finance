@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, CO
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -367,7 +367,7 @@ function sheetTitle(M) {
     default: return '';
   }
 }
-const sheet = (head, body) => `<div class="sheet-bg" data-a="closeBg"><div class="sheet">
+const sheet = (head, body) => `<div class="sheet-bg${sheetEnters(shownKind, V.modal?.kind) ? ' enter' : ''}" data-a="closeBg"><div class="sheet">
   <div class="head">${S.members.length && !V.modal?.required ? `<button class="iconbtn" data-a="close">${L('✖', 'بستن')}</button>` : '<span style="width:56px"></span>'}<span class="t">${head}<span class="hlab">${esc(sheetTitle(V.modal))}</span></span><span style="width:56px"></span></div>
   ${body}</div></div>`;
 
@@ -661,6 +661,7 @@ function modalView() {
   return '';
 }
 
+let shownKind = null; // pop-up kind on screen right now
 function render() {
   if (!S.members.length && !V.modal && !V.waiting) V.modal = { kind: 'setup' };
   if (S.members.length && !member(S.me) && !V.modal && !V.waiting) V.modal = { kind: 'who' };
@@ -672,9 +673,15 @@ function render() {
     : '';
   const focus = document.activeElement?.id;
   const typed = [...$app.querySelectorAll('input[id]')].map((el) => [el.id, el.value]);
+  // Same pop-up redrawn after a tap: keep its scroll so the pictures don't jump away.
+  const kind = V.modal?.kind || null;
+  const SCROLLERS = ['.sheet', '.sheet .picker'];
+  const kept = kind && kind === shownKind ? SCROLLERS.map((q) => $app.querySelector(q)?.scrollTop || 0) : [];
   $app.innerHTML = (S.members.length ? top() : '') + body + (S.members.length ? tabs() : '') + modalView();
+  shownKind = $app.querySelector('.sheet') ? kind : null;
+  kept.forEach((y, i) => { const el = y && $app.querySelector(SCROLLERS[i]); if (el) el.scrollTop = y; });
   for (const [id, v] of typed) { const el = document.getElementById(id); if (el) el.value = v; }
-  if (focus) document.getElementById(focus)?.focus();
+  if (focus) document.getElementById(focus)?.focus({ preventScroll: true });
   hydrate();
 }
 

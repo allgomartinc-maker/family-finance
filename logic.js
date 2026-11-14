@@ -203,3 +203,7 @@ export const catsFor = (base, custom, type) => [
   ...(base[type] || []),
   ...custom.filter((c) => c.type === type && !c.deleted).sort((a, b) => a.ts - b.ts),
 ];
+
+// A pop-up slides in only when it opens or switches to another pop-up.
+// Taps inside redraw it; replaying the slide would move the buttons under the finger.
+export const sheetEnters = (prevKind, kind) => !!kind && kind !== prevKind;

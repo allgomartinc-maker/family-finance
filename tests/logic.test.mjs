@@ -290,3 +290,14 @@ test('catsFor: built-in plus own (not deleted) for that side, own ones after', (
   const custom = [{ id: 'c1', type: 'in', ts: 2 }, { id: 'c0', type: 'in', ts: 1 }, { id: 'c2', type: 'out', ts: 3 }, { id: 'c3', type: 'in', ts: 4, deleted: true }];
   assert.deepEqual(catsFor(base, custom, 'in').map((c) => c.id), ['salary', 'c0', 'c1']);
 });
+
+// ---------- pop-up redraw: slide in once, keep scroll ----------
+import { sheetEnters } from '../logic.js';
+
+test('pop-up slides in only when it first opens or changes kind', () => {
+  assert.equal(sheetEnters(null, 'tx'), true);       // opened
+  assert.equal(sheetEnters('tx', 'tx'), false);      // tap inside: no replay, keys stay put
+  assert.equal(sheetEnters('tx', 'catNew'), true);   // moved to another pop-up
+  assert.equal(sheetEnters('tx', null), false);      // closed
+  assert.equal(sheetEnters(null, null), false);
+});
