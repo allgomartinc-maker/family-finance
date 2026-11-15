@@ -336,3 +336,42 @@ test('buyLines marks every open line bought by me, skips done or deleted ones', 
   assert.equal(g[2].boughtBy, 'y');      // already bought by someone else: untouched
   assert.ok(!g[3].bought);
 });
+
+// ---------- plain-text report and list for WhatsApp ----------
+import { reportText, listText } from '../logic.js';
+
+test('reportText: month money summary as plain Dari text', () => {
+  const ts = new Date('2026-11-10T12:00:00').getTime();
+  const txns = [
+    { type: 'in', amount: 20000, currency: 'AFN', ts, by: 'a', cat: 'salary' },
+    { type: 'out', amount: 1500, currency: 'AFN', ts, by: 'a', cat: 'food' },
+    { type: 'out', amount: 500, currency: 'AFN', ts, by: 'b', cat: 'bills' },
+    { type: 'out', amount: 9, currency: 'USD', ts, by: 'b', cat: 'food' },          // other currency: left out
+    { type: 'out', amount: 7, currency: 'AFN', ts, by: 'b', cat: 'food', deleted: true },
+  ];
+  const t = reportText({ txns, currency: 'AFN', month: monthKey(ts), cat: (id) => ({ food: ['🛒', 'سودا'], bills: ['🧾', 'بل'] }[id]), person: (id) => ({ a: 'بابه', b: 'مادر' }[id]) });
+  assert.match(t, /^📊 حساب خانواده — /);
+  assert.ok(t.includes('⬇️ آمد: ۲۰٬۰۰۰ افغانی'));
+  assert.ok(t.includes('⬆️ مصرف: ۲٬۰۰۰ افغانی'));
+  assert.ok(t.includes('🟢 باقی: ۱۸٬۰۰۰ افغانی'));
+  assert.ok(t.indexOf('🛒 سودا: ۱٬۵۰۰ افغانی') < t.indexOf('🧾 بل: ۵۰۰ افغانی'));   // biggest first
+  assert.ok(t.includes('بابه: ⬇️ ۲۰٬۰۰۰ افغانی ⬆️ ۱٬۵۰۰ افغانی'));
+  assert.ok(!t.includes('دالر'));
+});
+
+test('reportText: spending more than income shows 🔴 کم', () => {
+  const ts = new Date('2026-11-10T12:00:00').getTime();
+  const t = reportText({ txns: [{ type: 'out', amount: 300, currency: 'AFN', ts, by: 'a', cat: 'food' }], currency: 'AFN', month: monthKey(ts), cat: () => ['🛒', 'سودا'], person: () => 'بابه' });
+  assert.ok(t.includes('🔴 کم: ۳۰۰ افغانی'));
+});
+
+test('listText: open grocery lines with amount and unit', () => {
+  const g = [
+    { id: '1', item: 'rice', qty: 2, ts: 1, addedBy: [] },
+    { id: '2', item: 'oil', qty: 1, ts: 2, addedBy: [] },
+    { id: '3', item: 'tea', qty: 1, ts: 3, addedBy: [], bought: true },
+  ];
+  const t = listText(g, (x) => ({ rice: 'برنج', oil: 'روغن' }[x.item]), (x) => ({ rice: 'بوری', oil: 'بوتل' }[x.item]));
+  assert.equal(t, '🛒 لست سودا\n\n▫️ برنج — ۲ بوری\n▫️ روغن — ۱ بوتل');
+  assert.equal(listText([], () => '', () => ''), '🛒 لست سودا\n\n—');
+});

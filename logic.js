@@ -221,3 +221,22 @@ export const catsFor = (base, custom, type) => [
 // A pop-up slides in only when it opens or switches to another pop-up.
 // Taps inside redraw it; replaying the slide would move the buttons under the finger.
 export const sheetEnters = (prevKind, kind) => !!kind && kind !== prevKind;
+
+// ---------- plain text for WhatsApp ----------
+// cat(id) → [icon, name] · person(id) → name. Biggest spending first.
+export function reportText({ txns, currency, month, cat, person }) {
+  const t = totals(txns, currency, month);
+  const m = (n) => money(n, currency);
+  const out = [`📊 حساب خانواده — ${monthLabel(month)}`, '',
+    `⬇️ آمد: ${m(t.in)}`, `⬆️ مصرف: ${m(t.out)}`, t.net >= 0 ? `🟢 باقی: ${m(t.net)}` : `🔴 کم: ${m(-t.net)}`];
+  const cats = Object.entries(t.byCat).sort((a, b) => b[1] - a[1]);
+  if (cats.length) out.push('', 'مصرف به کدام چیز:', ...cats.map(([id, v]) => { const [ic, nm] = cat(id); return `${ic} ${nm}: ${m(v)}`; }));
+  const people = Object.entries(t.byPerson);
+  if (people.length) out.push('', 'هر نفر:', ...people.map(([id, p]) => `${person(id)}: ⬇️ ${m(p.in)} ⬆️ ${m(p.out)}`));
+  return out.join('\n');
+}
+
+export function listText(grocery, name, unit) {
+  const rows = activeGrocery(grocery).map((x) => `▫️ ${name(x)} — ${faDigits(x.qty)} ${unit(x)}`);
+  return `🛒 لست سودا\n\n${rows.length ? rows.join('\n') : '—'}`;
+}

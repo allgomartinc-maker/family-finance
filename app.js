@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, CO
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines, reportText, listText,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -16,6 +16,9 @@ const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
 
 // ---------- helpers ----------
+// Opens WhatsApp with the text ready; the person picks who gets it.
+const sendWhatsApp = (text) => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+const rawName = (id) => { const m = member(id) || contact(id); return m?.name || m?.emoji || ''; };
 function markBought(ids) {
   const now = Date.now();
   const lines = S.grocery.filter((x) => ids.includes(x.id) && !x.bought && !x.deleted);
@@ -191,7 +194,7 @@ function groceryList() {
     </div>`;
   };
   const unpaid = buyer() ? unpaidToday() : [];
-  return `<div class="chips">${chips}<button class="chip col" data-a="shareList"><span class="row1">📤</span><span class="lab">فرستادن</span></button></div>
+  return `<div class="chips">${chips}<button class="chip col wa" data-a="waList"><span class="row1">💬</span><span class="lab">واتساپ</span></button><button class="chip col" data-a="shareList"><span class="row1">📤</span><span class="lab">عکس لست</span></button></div>
     <div class="list">${rows.length ? rows.map((x) => row(x, false)).join('') : '<div class="empty">🧺</div>'}</div>
     ${buyer() && rows.length > 1 ? `<button class="save buyall" data-a="gbuyAll">✅✅ همه را خریدم</button>` : ''}
     ${done.length && buyer() ? `<div class="list" style="margin-top:18px">${done.map((x) => row(x, true)).join('')}</div>` : ''}
@@ -304,6 +307,7 @@ function reportView() {
   const deleted = S.txns.filter((x) => x.deleted && monthKey(x.ts) === V.month);
   return `<section>
     <button class="save" style="margin:0 0 12px;background:var(--sel)" data-a="summary">👨‍👩‍👧 📅 خلاصهٔ ماه برای فامیل</button>
+    <button class="save wa" style="margin:0 0 12px" data-a="waReport">💬 فرستادن گزارش به واتساپ</button>
     <div class="row" style="margin-bottom:12px">
       <button class="iconbtn" data-a="month" data-v="-1">${L('▶️', 'ماه قبل')}</button>
       <b class="grow" style="text-align:center;font-size:24px">${monthLabel(V.month)}</b>
@@ -934,6 +938,12 @@ const A = {
   sumNav: (v) => { V.modal.page += +v; render(); },
   play: (v) => play(v),
   shareList: () => shareList(),
+  waList: () => sendWhatsApp(listText(S.grocery, (x) => itemOf(x.item)?.name || '', (x) => unitOf(x).name)),
+  waReport: () => {
+    V.month ||= monthKey(Date.now());
+    sendWhatsApp(reportText({ txns: S.txns, currency: S.currency, month: V.month, person: rawName,
+      cat: (id) => { const c = findCat(BASE_CATS, S.cats || [], 'out', id); return [c.icon, c.name]; } }));
+  },
   gunit: (v) => commit(() => {
     const x = S.grocery.find((g) => g.id === v);
     const i = UNITS.findIndex((u) => u.id === unitOf(x).id);

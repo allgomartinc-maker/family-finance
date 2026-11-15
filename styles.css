@@ -158,11 +158,17 @@ section { padding: 14px 16px; }
 
 /* ---------- shopping list ---------- */
 .list { display: grid; gap: 10px; }
+/* grid children default to min-width:auto; without this a long price pushed ✅ off the screen */
+.list > * { min-width: 0; }
 .item { background: var(--card); border-radius: var(--r-lg); padding: 8px; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow); }
 .item .pic { width: 54px; font-size: 40px; text-align: center; flex: none; cursor: pointer; }
 .item .pic img { width: 54px; height: 54px; border-radius: var(--r-sm); object-fit: cover; }
 .item .qty { font-family: var(--f-display); font-size: 28px; min-width: 28px; text-align: center; color: var(--lapis-ink); }
-.item .meta { display: grid; gap: 2px; min-width: 0; overflow: hidden; }
+.item { flex-wrap: wrap; row-gap: 4px; }
+/* who asked + last price: own line under the buttons, so ✋ and ✅ always fit on a small phone */
+.item .meta { order: 9; flex: 1 0 100%; display: flex; align-items: center; gap: 8px; min-width: 0; padding-inline-start: 60px; }
+.item .meta:empty, .item .meta:not(:has(*)) { display: none; }
+.item > .meta + * { margin-inline-start: auto; }  /* buttons to the far side */
 .item .faces { min-width: 0; overflow: hidden; }
 .item.done { opacity: .55; }
 .item.done .pic { filter: grayscale(1); }
@@ -178,7 +184,7 @@ section { padding: 14px 16px; }
 .unit { width: 44px; flex: none; display: grid; justify-items: center; font-size: 22px; line-height: 1.1; }
 .unit small { font-size: 10px; color: var(--soft); font-weight: 600; }
 .unit .uimg { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; }
-.lp { font-size: 11px; color: var(--soft); white-space: nowrap; text-align: start; }
+.lp { font-size: 11px; color: var(--soft); text-align: start; line-height: 1.25; overflow-wrap: anywhere; }
 button.lp { font-size: 15px; font-weight: 800; color: var(--anar); }
 
 /* cash in hand */
@@ -306,3 +312,7 @@ input.name:focus { border-color: var(--lapis); outline: none; }
 .save.buyall { background: var(--pistachio-soft); color: var(--pistachio); border: 2px solid var(--pistachio); box-shadow: none; margin-top: 12px; }
 .save.paytrip { background: var(--pistachio); display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; }
 .save.paytrip span { font-size: 17px; }
+
+/* WhatsApp send */
+.save.wa { background: #1f8f4e; }
+.chip.wa .row1 { color: #1f8f4e; }
