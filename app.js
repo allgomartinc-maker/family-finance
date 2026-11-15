@@ -3,14 +3,14 @@ import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, CO
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines, reportText, listText, needsPin,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines, reportText, listText, needsPin, navTabs,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
 import { makePin, checkPin, PIN_LEN, PIN_KEYS } from './pin.js';
 
 let S;                                   // family state (IndexedDB)
-const V = { tab: 'grocery', gmode: 'add', gfilter: 'all', edit: false, month: null, modal: null, cloud: null, waiting: false };
+const V = { room: null, tab: 'grocery', gmode: 'add', gfilter: 'all', edit: false, month: null, modal: null, cloud: null, waiting: false };
 let SY = null;                           // sync handle when Firebase is set up
 const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
@@ -19,7 +19,7 @@ const $cam = document.getElementById('cam');
 function becomeMe(v) {
   unlockedUntil = 0; pocketOpen = false; P = null;
   S.me = v; localStorage.setItem('ff-me', v); V.modal = null;
-  if (!isAdmin() && V.tab === 'report') V.tab = 'grocery';
+  if (!isAdmin() && V.tab === 'admin') V.tab = 'grocery';
   commit(() => {});
 }
 // Opens WhatsApp with the text ready; the person picks who gets it.
@@ -43,7 +43,8 @@ const role = () => roleOf(me());
 const ROLE_ICON = { admin: '👑', earner: '💰', helper: '🛒', orderer: '🙋' };
 const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور', helper: 'خریدار', orderer: 'سفارش' };
 const buyer = () => canBuy(role()); // orderer only asks; never buys or handles money
-const TAB_NAME = { grocery: 'سودا', money: 'پول', loans: 'قرض', bills: 'بل‌ها', report: 'گزارش' };
+const TAB_NAME = { grocery: 'سودا', money: 'پول', loans: 'قرض', bills: 'بل‌ها', admin: 'مدیر' };
+const TAB_ICON = { grocery: '🛒', money: '💰', loans: '🤝', bills: '🧾', admin: '🗝️' };
 // Picture + its Dari word underneath: people who read can read it and teach the picture to those who can't.
 const L = (icon, word) => `${icon}<span class="lab">${word}</span>`;
 const who = (id) => esc(member(id)?.name || contact(id)?.name || '');
@@ -110,22 +111,39 @@ $cam.addEventListener('change', async () => {
 
 // ---------- views ----------
 function top() {
-  const title = { grocery: '🛒', money: '💰', loans: '🤝', bills: '🧾', report: '📊' }[V.tab];
+  const title = TAB_ICON[V.tab];
   return `<header class="top">
     <button class="mebtn" data-a="who">${face(me(), 'f56')}<span class="lab">${esc(me()?.name) || 'من'}</span></button>
     <button class="iconbtn" data-a="pocket">${L('👛', 'جیب من')}</button>
     <h1>${title}<span class="lab">${TAB_NAME[V.tab]}</span></h1>
     ${V.cloud ? `<span class="cloud">${{ ok: L('☁️✅', 'وصل'), pending: L('☁️⏳', 'در انتظار'), offline: L('📴', 'بی‌انترنت'), error: L('☁️❗', 'مشکل') }[V.cloud]}</span>` : ''}
-    ${isAdmin() ? `<button class="iconbtn" data-a="people">${L('👨‍👩‍👧', 'اعضا')}</button>` : ''}
   </header>`;
 }
 
 function tabs() {
-  const t = [['grocery', '🛒', 'سودا'], ['money', '💰', 'پول'], ['loans', '🤝', 'قرض'], ['bills', '🧾', 'بل‌ها'], ['report', '📊', 'گزارش']]
-    .filter(([id]) => canTab(role(), id));
+  const t = navTabs(role());
   if (t.length < 2) return '';
-  return `<nav class="tabs">${t.map(([id, i, n]) =>
-    `<button data-a="tab" data-v="${id}" class="${V.tab === id ? 'on' : ''}">${i}<small>${n}</small></button>`).join('')}</nav>`;
+  return `<nav class="tabs">${t.map((id) =>
+    `<button data-a="tab" data-v="${id}" class="${V.tab === id ? 'on' : ''} ${id === 'admin' ? 'door' : ''}">${TAB_ICON[id]}<small>${TAB_NAME[id]}</small></button>`).join('')}</nav>`;
+}
+
+// Back of the house (admin only): every admin job is one big picture here, one tap deep.
+const ROOMS = [
+  ['report', '📊', 'گزارش ماه'],
+  ['people', '👨‍👩‍👧', 'اعضای فامیل'],
+  ['invite', '📲', 'دعوت به فامیل'],
+  ['editGrocery', '🛒✏️', 'تغییر سودا'],
+  ['editBills', '🧾✏️', 'تغییر بل‌ها'],
+  ['summary', '📅', 'خلاصه برای فامیل'],
+];
+const backBar = (label) => `<button class="backbar" data-a="roomBack">↩️ <span>${label}</span></button>`;
+function adminView() {
+  if (V.room === 'report') return backBar('مدیر') + reportView();
+  return `<section><div class="rooms">${ROOMS.filter(([id]) => id !== 'invite' || SY).map(([id, i, n]) =>
+    `<button class="room" data-a="room" data-v="${id}"><span class="pic">${i}</span><b>${n}</b></button>`).join('')}</div></section>`;
+}
+function editBar() {
+  return V.edit ? `<div class="editbar"><span>✏️ <b>حالت تغییر</b></span><button data-a="editDone">✅ تمام</button></div>` : '';
 }
 
 function groceryView() {
@@ -152,9 +170,9 @@ function groceryAdd(open) {
       <span class="pic">${pic(c)}</span><small>${esc(c.name)}</small>
     </button>`).join('');
   const newTile = V.edit ? '' : '<button class="tile add newitem" data-a="newItem"><span class="pic">➕</span><small>چیز نو</small></button>';
-  const editBtns = isAdmin() ? `
+  const editBtns = V.edit ? `
     <div class="row" style="margin-top:14px">
-      <button class="tile add" data-a="editCat" style="flex:1"><span class="pic">${V.edit ? '✅' : '✏️'}</span><small>${V.edit ? 'تمام' : 'پاک کردن یا ثبت صدا'}</small></button>
+      <button class="tile add" data-a="editDone" style="flex:1"><span class="pic">✅</span><small>تمام</small></button>
     </div>` : '';
   return `<div class="grid">${tiles}${newTile}</div>${editBtns}`;
 }
@@ -256,8 +274,8 @@ function billsView() {
       <small class="muted">📅 روز ${faDigits(b.dueDay)}</small></button>`;
   }).join('');
   return `<section><div class="grid">${tiles}
-    ${isAdmin() ? `${V.edit ? '<button class="tile add" data-a="newBill"><span class="pic">➕</span><small>بل نو</small></button>' : ''}
-      <button class="tile add" data-a="editCat"><span class="pic">${V.edit ? '✅' : '✏️'}</span><small>${V.edit ? 'تمام' : 'تغییر بل‌ها'}</small></button>` : ''}
+    ${V.edit ? `<button class="tile add" data-a="newBill"><span class="pic">➕</span><small>بل نو</small></button>
+      <button class="tile add" data-a="editDone"><span class="pic">✅</span><small>تمام</small></button>` : ''}
   </div>
   ${S.bills.length ? '' : '<div class="empty">🧾</div>'}
   <p class="lbl" style="margin-top:18px">✅ پرداخت شده · ⏳ نزدیک · ❗ دیر شده</p></section>`;
@@ -694,7 +712,7 @@ function render() {
   if (!canTab(role(), V.tab)) V.tab = 'grocery';
   S.cash ||= []; S.loans ||= []; S.jars ||= []; S.contacts ||= []; S.cats ||= [];
   const body = S.members.length
-    ? ({ grocery: groceryView, money: moneyView, loans: loansViewUI, bills: billsView, report: reportView }[V.tab] || groceryView)()
+    ? ({ grocery: groceryView, money: moneyView, loans: loansViewUI, bills: billsView, admin: adminView }[V.tab] || groceryView)()
     : '';
   const focus = document.activeElement?.id;
   const typed = [...$app.querySelectorAll('input[id]')].map((el) => [el.id, el.value]);
@@ -702,7 +720,7 @@ function render() {
   const kind = V.modal?.kind || null;
   const SCROLLERS = ['.sheet', '.sheet .picker'];
   const kept = kind && kind === shownKind ? SCROLLERS.map((q) => $app.querySelector(q)?.scrollTop || 0) : [];
-  $app.innerHTML = (S.members.length ? top() : '') + body + (S.members.length ? tabs() : '') + modalView();
+  $app.innerHTML = (S.members.length ? top() + editBar() : '') + body + (S.members.length ? tabs() : '') + modalView();
   shownKind = $app.querySelector('.sheet') ? kind : null;
   kept.forEach((y, i) => { const el = y && $app.querySelector(SCROLLERS[i]); if (el) el.scrollTop = y; });
   for (const [id, v] of typed) { const el = document.getElementById(id); if (el) el.value = v; }
@@ -869,14 +887,23 @@ document.addEventListener('visibilitychange', () => {
   unlockedUntil = 0;
   pocketOpen = false;
   if (['pocket', 'pocketAdd'].includes(V.modal?.kind) || V.modal?.target === 'pocket') { V.modal = null; render(); }
-  if (V.tab === 'report' || V.edit) { V.tab = V.tab === 'report' ? 'grocery' : V.tab; V.edit = false; render(); }
+  if (V.tab === 'admin' || V.edit) { V.tab = 'grocery'; V.room = null; V.edit = false; render(); }
 });
 
 const A = {
   tab: (v) => {
-    const go = () => { V.tab = v; V.edit = false; V.modal = null; render(); };
-    if (v === 'report') requireAdmin(go); else go();
+    const go = () => { V.tab = v; V.room = null; V.edit = false; V.modal = null; render(); scrollTo(0, 0); };
+    if (v === 'admin') requireAdmin(go); else go();
   },
+  room: (v) => requireAdmin(() => {
+    if (v === 'editGrocery') Object.assign(V, { tab: 'grocery', gmode: 'add', edit: true });
+    else if (v === 'editBills') Object.assign(V, { tab: 'bills', edit: true });
+    else if (v === 'report') V.room = 'report';
+    else { if (['people', 'invite', 'summary'].includes(v)) A[v](); return; }   // these open as pop-ups
+    V.modal = null; render(); scrollTo(0, 0);
+  }),
+  roomBack: () => { V.room = null; render(); scrollTo(0, 0); },
+  editDone: () => { Object.assign(V, { edit: false, tab: isAdmin() ? 'admin' : V.tab, room: null }); render(); scrollTo(0, 0); },
   who: () => { V.modal = { kind: 'who' }; render(); },
   iam: (v) => {
     if (!needsPin(member(v), S.me)) { becomeMe(v); return; }
@@ -1029,7 +1056,6 @@ const A = {
   gbought: (v) => buyer() && commit(() => markBought([v])),
   gbuyAll: () => buyer() && commit(() => markBought(groceryFor(S.grocery, V.gfilter).map((x) => x.id))),
   gundo: (v) => buyer() && commit(() => { const x = S.grocery.find((g) => g.id === v); x.bought = false; }),
-  editCat: () => (V.edit ? (V.edit = false, render()) : requireAdmin(() => { V.edit = true; V.modal = null; render(); })),
   rmItem: (v) => commit(() => { log('rmItem', '🛒🗑️', itemOf(v)?.name); S.catalog = S.catalog.filter((c) => c.id !== v); }),
   newItem: () => { V.modal = { kind: 'item', name: '', q: '' }; render(); },
   iemoji: (v) => {

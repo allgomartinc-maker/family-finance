@@ -113,7 +113,8 @@ test('roles: old "member" counts as earner; unknown → helper', () => {
 test('helper sees only grocery; earner no report; admin all', () => {
   assert.deepEqual(['grocery', 'money', 'bills', 'report'].filter((t) => canTab('helper', t)), ['grocery']);
   assert.deepEqual(['grocery', 'money', 'bills', 'report'].filter((t) => canTab('earner', t)), ['grocery', 'money', 'bills']);
-  assert.deepEqual(['grocery', 'money', 'bills', 'report'].filter((t) => canTab('admin', t)), ['grocery', 'money', 'bills', 'report']);
+  assert.deepEqual(['grocery', 'money', 'bills', 'admin'].filter((t) => canTab('admin', t)), ['grocery', 'money', 'bills', 'admin']);
+  assert.equal(canTab('earner', 'admin'), false);
 });
 
 test('cash in hand = given − returned − spent from hand (per currency, ignores deleted)', () => {
@@ -385,4 +386,14 @@ test('choosing who you are asks the PIN, unless it is already you or no PIN set 
   assert.equal(needsPin({ id: 'a', pin: null }, 'b'), false);
   assert.equal(needsPin({ id: 'a' }, null), false);
   assert.equal(needsPin(undefined, null), false);
+});
+
+import { navTabs } from '../logic.js';
+test('bottom bar: front places for everyone, one admin door last (admin only)', () => {
+  assert.deepEqual(navTabs('admin'), ['grocery', 'money', 'loans', 'bills', 'admin']);
+  assert.deepEqual(navTabs('earner'), ['grocery', 'money', 'loans', 'bills']);
+  assert.deepEqual(navTabs('helper'), ['grocery']);
+  assert.deepEqual(navTabs('orderer'), ['grocery']);
+  assert.deepEqual(navTabs('nobody'), ['grocery']);
+  assert.ok(navTabs('admin').length <= 5);
 });
