@@ -375,3 +375,14 @@ test('listText: open grocery lines with amount and unit', () => {
   assert.equal(t, '🛒 لست سودا\n\n▫️ برنج — ۲ بوری\n▫️ روغن — ۱ بوتل');
   assert.equal(listText([], () => '', () => ''), '🛒 لست سودا\n\n—');
 });
+
+// ---------- every person has a PIN ----------
+import { needsPin } from '../logic.js';
+
+test('choosing who you are asks the PIN, unless it is already you or no PIN set yet', () => {
+  assert.equal(needsPin({ id: 'a', pin: { salt: 's', hash: 'h' } }, 'b'), true);
+  assert.equal(needsPin({ id: 'a', pin: { salt: 's', hash: 'h' } }, 'a'), false);
+  assert.equal(needsPin({ id: 'a', pin: null }, 'b'), false);
+  assert.equal(needsPin({ id: 'a' }, null), false);
+  assert.equal(needsPin(undefined, null), false);
+});

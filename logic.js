@@ -240,3 +240,6 @@ export function listText(grocery, name, unit) {
   const rows = activeGrocery(grocery).map((x) => `▫️ ${name(x)} — ${faDigits(x.qty)} ${unit(x)}`);
   return `🛒 لست سودا\n\n${rows.length ? rows.join('\n') : '—'}`;
 }
+
+// Picking a person on a phone needs their PIN (people added before PINs existed: none until one is set).
+export const needsPin = (m, currentMe) => !!m?.pin && m.id !== currentMe;

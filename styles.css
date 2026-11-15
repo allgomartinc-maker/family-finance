@@ -316,3 +316,6 @@ input.name:focus { border-color: var(--lapis); outline: none; }
 /* WhatsApp send */
 .save.wa { background: #1f8f4e; }
 .chip.wa .row1 { color: #1f8f4e; }
+
+/* person without a PIN yet */
+.round.warn { background: var(--saffron-soft); box-shadow: inset 0 0 0 2px var(--saffron); }

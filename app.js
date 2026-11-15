@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, CO
 import {
   monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
   roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines, reportText, listText,
+  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines, reportText, listText, needsPin,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -16,6 +16,12 @@ const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
 
 // ---------- helpers ----------
+function becomeMe(v) {
+  unlockedUntil = 0; pocketOpen = false; P = null;
+  S.me = v; localStorage.setItem('ff-me', v); V.modal = null;
+  if (!isAdmin() && V.tab === 'report') V.tab = 'grocery';
+  commit(() => {});
+}
 // Opens WhatsApp with the text ready; the person picks who gets it.
 const sendWhatsApp = (text) => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
 const rawName = (id) => { const m = member(id) || contact(id); return m?.name || m?.emoji || ''; };
@@ -358,7 +364,7 @@ function sheetTitle(M) {
     case 'member': return M.self ? 'من کی هستم؟' : 'عضو نو';
     case 'who': return 'شما کی هستید؟';
     case 'people': return 'اعضای فامیل';
-    case 'pin': return (M.target === 'pocket' ? 'رمز جیب: ' : 'رمز مدیر: ') + ({ set: 'رمز نو بسازید', confirm: 'دوباره بزنید', check: 'رمز را بزنید' }[M.mode]);
+    case 'pin': return (M.target === 'pocket' ? 'رمز جیب: ' : M.target === 'member' ? `رمز ${nm(M.memberId) || member(M.memberId)?.emoji || ''}: ` : 'رمز مدیر: ') + ({ set: 'رمز نو بسازید', confirm: 'دوباره بزنید', check: 'رمز را بزنید' }[M.mode]);
     case 'invite': return 'دعوت به فامیل';
     case 'tx':
       if (M.type === 'in' && M.cat === 'abroad' && !M.from) return 'پول از خارج — کی روان کرد؟';
@@ -423,7 +429,7 @@ function modalView() {
       return sheet('👨‍👩‍👧', `<div class="list">${S.members.filter((m) => !m.deleted).map((m) => `
         <div class="item">${face(m, 'f56')}<span class="grow">${esc(m.name)}</span>
           <button class="round" data-a="${m.id === S.me ? 'noop' : 'roleCycle'}" data-v="${m.id}">${L(ROLE_ICON[roleOf(m)], ROLE_NAME[roleOf(m)])}</button>
-          ${m.id !== S.me && m.role === 'admin' && m.pin ? `<button class="round" data-a="pinReset" data-v="${m.id}">${L('🔒↩️', 'رمز نو')}</button>` : ''}
+          ${m.id === S.me ? '' : `<button class="round ${m.pin ? '' : 'warn'}" data-a="memberPin" data-v="${m.id}">${m.pin ? L('🔒↩️', 'رمز نو') : L('🔓', 'رمز بده')}</button>`}
           ${m.id === S.me ? '' : `<button class="round" data-a="rmMember" data-v="${m.id}">${L('🗑️', 'پاک')}</button>`}</div>`).join('')}</div>
         <button class="save" data-a="newMember">➕👤 عضو نو</button>
         ${SY ? '<button class="save" style="background:var(--sel)" data-a="invite">📲 دعوت با QR</button>' : ''}`);
@@ -822,8 +828,10 @@ function requireAdmin(run) {
   V.modal = { kind: 'pin', mode: me().pin ? 'check' : 'set', seq: [], run };
   render();
 }
+const pinOwner = (M) => (M.target === 'member' ? member(M.memberId) : me());
 function unlock(M) {
   pinFails = 0;
+  if (M.target === 'member') { V.modal = M.back || null; if (M.run) M.run(); else render(); return; }
   if (M.target === 'pocket') { pocketOpen = true; V.modal = { kind: 'pocket' }; render(); return; }
   unlockedUntil = Date.now() + 10 * 60 * 1000;
   V.modal = null;
@@ -843,12 +851,12 @@ async function pinTap(i) {
     if (seq.join() !== M.first.join()) { toast('🔁❌'); Object.assign(M, { mode: 'set', first: null, shake: true, busy: false }); render(); return; }
     const pin = await makePin(seq);
     if (M.target === 'pocket') { P.pin = pin; await savePocket(S.me, P); }
-    else await commit(() => { me().pin = pin; log('pinSet', '🔒✅', me().name); });
+    else { const o = pinOwner(M); await commit(() => { o.pin = pin; log('pinSet', '🔒✅', o.name); }); }
     toast('🔒✅');
     unlock(M);
     return;
   }
-  if (await checkPin(seq, M.target === 'pocket' ? P.pin : me().pin)) { unlock(M); return; }
+  if (await checkPin(seq, M.target === 'pocket' ? P.pin : pinOwner(M)?.pin)) { unlock(M); return; }
   pinFails += 1;
   if (pinFails >= 5) { pinLockUntil = Date.now() + 60 * 1000; pinFails = 0; setTimeout(render, 60 * 1000 + 50); }
   Object.assign(M, { shake: true, busy: false });
@@ -870,11 +878,17 @@ const A = {
     if (v === 'report') requireAdmin(go); else go();
   },
   who: () => { V.modal = { kind: 'who' }; render(); },
-  iam: (v) => { unlockedUntil = 0; pocketOpen = false; P = null; S.me = v; localStorage.setItem('ff-me', v); V.modal = null; if (!isAdmin() && V.tab === 'report') V.tab = 'grocery'; commit(() => {}); },
+  iam: (v) => {
+    if (!needsPin(member(v), S.me)) { becomeMe(v); return; }
+    V.modal = { kind: 'pin', target: 'member', memberId: v, mode: 'check', seq: [], back: null,
+      run: () => { becomeMe(v); if (isAdmin()) unlockedUntil = Date.now() + 10 * 60 * 1000; } };   // PIN just typed: don't ask again
+    render();
+  },
+  memberPin: (v) => requireAdmin(() => {   // set or change a person's PIN (admin)
+    V.modal = { kind: 'pin', target: 'member', memberId: v, mode: 'set', seq: [], back: { kind: 'people' } };
+    render();
+  }),
   people: () => requireAdmin(() => { V.modal = { kind: 'people' }; render(); }),
-  pinReset: (v) => requireAdmin(() => commit(() => {
-    member(v).pin = null; log('pinReset', '🔒↩️', member(v).name); V.modal = { kind: 'people' };
-  })),
   pinTap: (v) => pinTap(+v),
   pinBack: () => { V.modal.seq.pop(); render(); },
   newSelf: () => { V.modal = { kind: 'member', role: 'helper', self: true }; render(); },
@@ -899,7 +913,9 @@ const A = {
       S.members.push(m);
       if (setup || M.self) { S.me = m.id; localStorage.setItem('ff-me', m.id); }
       log('addMember', '👤➕', m.name);
-      V.modal = setup ? { kind: 'pin', mode: 'set', seq: [], run: null, required: true } : M.self ? null : { kind: 'people' };
+      // Every new person gets a PIN right away (setup: the admin's own PIN).
+      V.modal = setup ? { kind: 'pin', mode: 'set', seq: [], run: null, required: true }
+        : { kind: 'pin', target: 'member', memberId: m.id, mode: 'set', seq: [], required: true, back: M.self ? null : { kind: 'people' } };
     });
   },
 
