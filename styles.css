@@ -232,6 +232,20 @@ button.lp { font-size: 15px; font-weight: 800; color: var(--anar); }
 .tx .cat small { font-size: 15px; }
 .tx .cat .lab { font-size: 10px; }
 .tx .amt { font-size: 19px; font-weight: 800; }
+.tx .note { display: inline-block; margin-top: 4px; padding: 2px 8px; font-size: 14px; color: #2a3a6b; background: #fffbea;
+  border-inline-start: 3px solid #e57373; border-radius: 4px; overflow-wrap: anywhere; }
+/* Note box looks like a page of a school notebook: ruled lines + red margin. */
+.notebox { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 6px 10px; font-size: 28px;
+  background: #fffbea repeating-linear-gradient(to bottom, transparent 0 31px, #bcd0ee 31px 32px);
+  border-inline-start: 4px solid #e57373; border-radius: 6px; box-shadow: var(--shadow); }
+.notebox input { flex: 1; min-width: 0; border: 0; background: transparent; font: 600 18px var(--f-text); padding: 10px 4px;
+  color: #2a3a6b; border-bottom: 2px solid #8fb0e0; border-radius: 0; }
+.notebox input::placeholder { color: #8a94ad; font-weight: 400; }
+.notebox input:focus { outline: none; border-bottom-color: var(--lapis); }
+.notebox:focus-within { box-shadow: 0 0 0 3px var(--saffron); }
+.notecard { font-size: 18px; text-align: start; overflow-wrap: anywhere; color: #2a3a6b; line-height: 32px; padding: 8px 14px;
+  background: #fffbea repeating-linear-gradient(to bottom, transparent 0 31px, #bcd0ee 31px 32px);
+  border-inline-start: 4px solid #e57373; border-radius: 6px; }
 .tx.del { opacity: .45; text-decoration: line-through; }
 .tx.del2 { opacity: .5; }
 

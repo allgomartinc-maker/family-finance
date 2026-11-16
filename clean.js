@@ -16,7 +16,7 @@ const GOALS = ['wedding', 'eid', 'health', 'hajj', 'house', 'school', 'other'];
 const COUNTRIES = ['ir', 'pk', 'tr', 'de', 'gb', 'us', 'sa', 'ae', 'other'];
 const UNIT_IDS = ['kg', 'sack', 'tin', 'bottle', 'pack', 'piece', 'dozen', 'liter'];
 const NUMS = ['qty', 'amount', 'dueDay', 'ts', 'boughtTs', 'ord', 'price', 'fee', 'target', 'stockTs'];
-const TEXT = { name: 60, extra: 60, action: 30, emoji: 16, icon: 16 };
+const TEXT = { note: 120, name: 60, extra: 60, action: 30, emoji: 16, icon: 16 };
 
 export function cleanRecord(coll, rec) {
   if (!rec || typeof rec !== 'object' || !isId(rec.id)) return null;

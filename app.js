@@ -257,7 +257,7 @@ const txRow = (x) => `<button class="tx ${x.deleted ? 'del' : ''}" data-a="txVie
   <span class="cat">${catOf(x.type, x.cat).icon}${x.country ? `<small>${countryOf(x.country)?.icon || ''}</small>` : ''}</span>
   <span class="grow" style="text-align:start">
     <span class="amt ${x.type}-c">${x.type === 'in' ? '⬇️' : '⬆️'} ${money(x.amount, x.currency)}</span><br>
-    <span class="lbl">${catOf(x.type, x.cat).name} · ${who(x.by)} · ${dayLabel(x.ts)}</span></span>
+    <span class="lbl">${catOf(x.type, x.cat).name} · ${who(x.by)} · ${dayLabel(x.ts)}</span>${x.note ? `<br><span class="note">📝 ${esc(x.note)}</span>` : ''}</span>
   ${x.paidFrom === 'hand' ? '🤲' : ''}${x.photo ? '📷' : ''}${x.voice ? '🎤' : ''} ${face(member(x.by), 'f40')}
 </button>`;
 
@@ -657,8 +657,10 @@ function modalView() {
         ${keypad(M.feeMode ? M.fee || '' : M.amount, M.currency)}
         <div class="row" style="margin-top:12px;justify-content:center;gap:14px">
           <button class="iconbtn" data-a="txPhoto">${L(M.photo ? '✅' : '📷', 'عکس رسید')}</button>
+          <button class="iconbtn" data-a="txNote">${L(M.note ? '✅' : '📝', 'یادداشت')}</button>
           <button class="iconbtn" data-a="txVoice" style="${M.recording ? 'background:var(--out)' : ''}">${L(M.recording ? '⏹️' : M.voice ? '✅' : '🎤', M.recording ? 'ایستاد' : 'صدا')}</button>
         </div>
+        ${M.noteOpen || M.note ? `<label class="notebox">📝<input id="txnote" maxlength="120" placeholder="یادداشت — چرا؟ (اختیاری)" value="${esc(M.note)}" autocomplete="off"></label>` : ''}
         ${M.photo ? `<img class="photo-prev" style="margin-top:10px;max-height:160px" src="${M.photo}" alt="">` : ''}
         <button class="save" data-a="txSave" ${+M.amount > 0 && !M.recording ? '' : 'disabled'}>✅ ثبت</button>`);
     }
@@ -673,6 +675,7 @@ function modalView() {
           ${x.cat === 'abroad' ? `<div class="row" style="justify-content:center;margin-top:8px">${face(contact(x.from))}
             <span style="font-size:28px">${countryOf(x.country)?.icon || ''}</span>${x.fee ? `<span class="lbl">🏦 ${money(x.fee, x.currency)}</span>` : ''}</div>` : ''}
         </div>
+        ${x.note ? `<div class="card notecard">📝 ${esc(x.note)}</div>` : ''}
         ${x.photo ? `<img class="photo-prev" ${mediaAttr(x.photo)} alt="">` : ''}
         ${x.voice ? `<audio controls ${mediaAttr(x.voice)} style="width:100%;margin-top:10px"></audio>` : ''}
         ${x.deleted && isAdmin() ? '<button class="save" data-a="txRestore">↩️ دوباره آوردن</button>'
@@ -1195,10 +1198,17 @@ const A = {
   },
   txPhoto: () => takePhoto(900, (p) => { V.modal.photo = p; render(); }),
   txVoice: () => toggleVoice(),
+  txNote: () => {   // one extra tap opens the notebook line; typing keeps going across keypad taps
+    const M = V.modal;
+    M.note = (document.getElementById('txnote')?.value ?? M.note ?? '').trim();
+    M.noteOpen = true; render();
+    document.getElementById('txnote')?.focus();
+  },
   txSave: () => {
     const M = V.modal;
+    const note = (document.getElementById('txnote')?.value ?? M.note ?? '').trim().slice(0, 120);
     const x = { id: uid(), type: M.type, cat: M.cat, amount: +M.amount, currency: M.currency, by: S.me,
-      ts: Date.now(), photo: M.photo || null, voice: M.voice || null, billId: M.billId || null,
+      ts: Date.now(), note: note || null, photo: M.photo || null, voice: M.voice || null, billId: M.billId || null,
       paidFrom: M.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null,
       ...(M.type === 'in' && M.cat === 'abroad' ? { from: M.from || null, country: M.country || null, fee: +M.fee || 0 } : {}) };
     commit(() => {

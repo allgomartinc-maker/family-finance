@@ -126,3 +126,10 @@ test('own money categories: type in/out, short name and icon', () => {
 test('member role orderer is kept from the cloud', () => {
   assert.equal(cleanRecord('members', { id: 'm1', role: 'orderer' }).role, 'orderer');
 });
+
+test('expense note: kept as plain text, cut to 120, junk types become text', () => {
+  const r = cleanRecord('txns', { id: 'a1', type: 'out', note: 'برای مکتب احمد' });
+  assert.equal(r.note, 'برای مکتب احمد');
+  assert.equal(cleanRecord('txns', { id: 'a1', type: 'out', note: 'x'.repeat(500) }).note.length, 120);
+  assert.equal(typeof cleanRecord('txns', { id: 'a1', type: 'out', note: { evil: 1 } }).note, 'string');
+});
