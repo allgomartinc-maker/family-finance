@@ -22,9 +22,13 @@ const CLOUD = emulator ? emulatorConfig : firebaseConfig;
 const hasFamily = () => { try { return !!localStorage.getItem('ff-family'); } catch { return false; } };
 const siteLink = () => `${location.origin}${location.pathname}`;
 // Join that family: the page reloads and the normal join brings everything down; then "who are you?".
-function joinFamily({ fid, code }) {
-  location.hash = `join=${fid}.${code}`;
-  location.reload();
+// The invite is kept on the phone until the join works, so nothing is lost if the app restarts.
+const PENDING = 'ff-join';
+const pendingInvite = () => { try { return JSON.parse(localStorage.getItem(PENDING) || 'null'); } catch { return null; } };
+function joinFamily(inv) {
+  try { localStorage.setItem(PENDING, JSON.stringify({ fid: inv.fid, code: inv.code })); } catch { /* private mode */ }
+  if (SY) { location.hash = `join=${inv.fid}.${inv.code}`; location.reload(); return; }   // already in another family: start clean
+  connect(inv);   // brand-new phone: join right here, no restart
 }
 function becomeMe(v) {
   unlockedUntil = 0; pocketOpen = false; P = null;
@@ -1380,24 +1384,33 @@ const COLL_SORT = {
   contacts: (a, b) => a.ts - b.ts,
   cats: (a, b) => a.ts - b.ts,
 };
-async function connect() {
-  if (!cfg || SY) return;
-  const joining = location.hash.startsWith('#join=');
+let connecting = false;
+async function connect(invite = null) {
+  if (!cfg || SY || connecting) return;
+  invite ||= pendingInvite();
+  const joining = !!invite || location.hash.startsWith('#join=');
   if (!joining && !hasFamily() && !S.members.length) return;   // brand-new phone: wait for "log in" or "new family"
   if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [], cash: [], loans: [], jars: [], contacts: [], cats: [] }; V.waiting = true; V.modal = null; render(); }
+  connecting = true;
   try {
-    SY = await startSyncLazy();
+    SY = await startSyncLazy(invite);
     if (emulator) window.__sync = SY;
+    try { localStorage.removeItem(PENDING); } catch { /* ignore */ }
   } catch (e) {
     console.error('sync', e);
-    V.waiting = false; V.cloud = 'offline'; render();
-    return;
-  }
+    V.waiting = false; V.cloud = 'offline';
+    // Joining failed: say why (a screenshot of this tells us the cause) and let them try again.
+    if (joining) {
+      try { localStorage.removeItem(PENDING); } catch { /* ignore */ }
+      V.modal = { kind: 'paste', err: `وصل نشد — ${navigator.onLine ? (e?.code || e?.message || 'error') : 'انترنت نیست'}` };
+    }
+    render();
+  } finally { connecting = false; }
 }
-async function startSyncLazy() {
+async function startSyncLazy(invite = null) {
   const { startSync } = await import('./sync.js');
   return startSync({
-    config: cfg, emulator,
+    config: cfg, emulator, invite,
     getState: () => S,
     onStatus: (st) => { if (V.cloud !== st) { V.cloud = st; if (!V.modal) render(); } },
     onRemote: (c, raw) => {

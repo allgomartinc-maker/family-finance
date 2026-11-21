@@ -36,7 +36,7 @@ export async function getLogin({ config, emulator, id }) {
   return d.exists() ? d.data() : null;
 }
 
-export async function startSync({ config, emulator, getState, onRemote, onStatus }) {
+export async function startSync({ config, emulator, getState, onRemote, onStatus, invite = null }) {
   // What this phone had when sync started. Anything the family changes on this phone before the
   // first cloud snapshot arrives is the difference from this, and gets uploaded then.
   const startBase = (S) => Object.fromEntries(COLLS.map((c) => [c, snapshotOf(S[c] || [], c)]));
@@ -44,14 +44,16 @@ export async function startSync({ config, emulator, getState, onRemote, onStatus
   const { F, db, uid } = await fb(config, emulator);
 
   let fam = JSON.parse(localStorage.getItem(FAM_KEY) || 'null');
-  const join = location.hash.match(/^#join=([a-z0-9]+)\.([a-z0-9]+)$/);
+  // Join from an invite link in the address (#join=…) or one pasted into the app (invite).
+  const hashJoin = location.hash.match(/^#join=([a-z0-9]+)\.([a-z0-9]+)$/);
+  const inv = invite || (hashJoin && { fid: hashJoin[1], code: hashJoin[2] });
   let joined = false;
-  if (join && fam?.fid !== join[1]) {
-    fam = { fid: join[1], code: join[2] };
+  if (inv && fam?.fid !== inv.fid) {
+    fam = { fid: inv.fid, code: inv.code };
     await F.setDoc(F.doc(db, `families/${fam.fid}/joins/${uid}`), { code: fam.code, ts: Date.now() });
     joined = true;
   }
-  if (join) history.replaceState(null, '', location.pathname + location.search);
+  if (hashJoin) history.replaceState(null, '', location.pathname + location.search);
 
   const prev = {};
   const ready = new Set();
