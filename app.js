@@ -491,7 +491,9 @@ function modalView() {
         <label class="field">🔑<input id="${f ? 'lpass' : 'fpass'}" placeholder="رمز — مثلاً abcd-2345" autocomplete="current-password" autocapitalize="none" spellcheck="false" dir="ltr"></label>
         ${M.err ? `<p class="out-c" style="text-align:center;font-weight:700">❗ ${esc(M.err)}</p>` : ''}
         <button class="save" data-a="${f ? 'loginGo' : 'pinForgotGo'}" ${M.busy ? 'disabled' : ''}>${M.busy ? '⏳' : '✅ ' + (f ? 'ورود' : 'رمز نو بسازم')}</button>
-        ${f ? '' : '<p class="lbl" style="text-align:center">نام کاربری ندارید؟ از مدیر بخواهید: اعضای فامیل ← 🔒↩️ رمز نو</p>'}`);
+        ${f ? '' : '<p class="lbl" style="text-align:center">نام کاربری ندارید؟ از مدیر بخواهید: اعضای فامیل ← 🔒↩️ رمز نو</p>'}
+        ${f ? `<button class="save" style="background:var(--in)" data-a="pasteInvite">📋 لینک دعوت دارم — بچسبانم</button>
+          ${M.back ? '<button class="save" style="background:#555" data-a="loginBack">↩️ پس</button>' : ''}` : ''}`);
     }
     case 'mlogin': {
       const m = member(M.memberId);
@@ -997,9 +999,12 @@ const A = {
       joinFamily(p);
     } catch (e) {
       console.error(e);
-      Object.assign(M, { busy: false, err: navigator.onLine ? 'مشکل — دوباره کوشش کنید' : 'انترنت نیست' }); render();
+      const off = e?.code === 'permission-denied';   // logins not switched on in Firebase yet
+      Object.assign(M, { busy: false, err: off ? 'ورود با نام کاربری هنوز روشن نیست — دکمه سبز 📋 را بزنید'
+        : navigator.onLine ? 'مشکل — دوباره کوشش کنید' : 'انترنت نیست' }); render();
     }
   },
+  loginBack: () => { V.modal = V.modal.back || null; render(); },
   memberLogin: (v) => requireAdmin(() => {
     const m = member(v);
     V.modal = { kind: 'mlogin', memberId: v, user: m.loginUser || (/^[a-z0-9 ._-]+$/i.test(m.name || '') ? normUser(m.name) : '') };
