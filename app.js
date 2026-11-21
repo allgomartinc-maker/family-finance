@@ -1,16 +1,16 @@
 import { load, save, uid, loadPocket, savePocket } from './store.js';
-import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, PICKER, UNITS, UNIT_OF, GOALS, COUNTRIES, PHOTO_ITEMS, PHOTO_UNITS, IN_PICS, OUT_PICS } from './data.js';
+import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS } from './data.js';
 import {
-  monthKey, shiftMonth, monthLabel, solarDay, totals, groceryFor, addGrocery, billStatus, faDigits, money,
-  roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns, loansView, jarTotals, abroadSummary,
-  nextLevel, pantryOrder, monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, canBuy, nextRole, buyLines, reportText, listText, needsPin, navTabs,
+  monthKey, shiftMonth, monthLabel, totals, billStatus, faDigits, money,
+  roleOf, canTab, cashBalances, visibleTxns, loansView, jarTotals, abroadSummary,
+  monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
 import { makePin, checkPin, PIN_LEN, PIN_KEYS } from './pin.js';
 
 let S;                                   // family state (IndexedDB)
-const V = { room: null, tab: 'grocery', gmode: 'add', gfilter: 'all', edit: false, month: null, modal: null, cloud: null, waiting: false };
+const V = { room: null, tab: 'money', edit: false, month: null, modal: null, cloud: null, waiting: false };
 let SY = null;                           // sync handle when Firebase is set up
 const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
@@ -19,32 +19,20 @@ const $cam = document.getElementById('cam');
 function becomeMe(v) {
   unlockedUntil = 0; pocketOpen = false; P = null;
   S.me = v; localStorage.setItem('ff-me', v); V.modal = null;
-  if (!isAdmin() && V.tab === 'admin') V.tab = 'grocery';
+  if (!isAdmin() && V.tab === 'admin') V.tab = 'money';
   commit(() => {});
 }
 // Opens WhatsApp with the text ready; the person picks who gets it.
 const sendWhatsApp = (text) => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
 const rawName = (id) => { const m = member(id) || contact(id); return m?.name || m?.emoji || ''; };
-function markBought(ids) {
-  const now = Date.now();
-  const lines = S.grocery.filter((x) => ids.includes(x.id) && !x.bought && !x.deleted);
-  for (const x of lines) x.unit = unitOf(x).id;
-  buyLines(S.grocery, ids, S.me, now);
-  for (const x of lines) {
-    const ci = itemOf(x.item);
-    if (ci?.stock) { ci.stock = 'full'; ci.stockBy = S.me; ci.stockTs = now; }   // bought → full at home
-    log('gbought', '✅', ci?.name);
-  }
-}
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const me = () => S.members.find((m) => m.id === S.me);
 const isAdmin = () => me()?.role === 'admin';
 const role = () => roleOf(me());
-const ROLE_ICON = { admin: '👑', earner: '💰', helper: '🛒', orderer: '🙋' };
-const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور', helper: 'خریدار', orderer: 'سفارش' };
-const buyer = () => canBuy(role()); // orderer only asks; never buys or handles money
-const TAB_NAME = { grocery: 'سودا', money: 'پول', loans: 'قرض', bills: 'بل‌ها', admin: 'مدیر' };
-const TAB_ICON = { grocery: '🛒', money: '💰', loans: '🤝', bills: '🧾', admin: '🗝️' };
+const ROLE_ICON = { admin: '👑', earner: '💰' };
+const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور' };
+const TAB_NAME = { money: 'پول', loans: 'قرض', bills: 'بل‌ها', admin: 'مدیر' };
+const TAB_ICON = { money: '💰', loans: '🤝', bills: '🧾', admin: '🗝️' };
 // Picture + its Dari word underneath: people who read can read it and teach the picture to those who can't.
 const L = (icon, word) => `${icon}<span class="lab">${word}</span>`;
 const who = (id) => esc(member(id)?.name || contact(id)?.name || '');
@@ -55,20 +43,13 @@ const countryOf = (id) => COUNTRIES.find((c) => c.id === id);
 const contactGrid = (action) => `<div class="grid">${(S.contacts || []).filter((c) => !c.deleted).map((c) => `
   <button class="tile" data-a="${action}" data-v="${c.id}">${face(c, 'f80')}<small>${esc(c.name)}</small></button>`).join('')}
   <button class="tile add" data-a="contactNew"><span class="pic">➕</span><small>شخص نو</small></button></div>`;
-const unitOf = (x) => UNITS.find((u) => u.id === (x.unit || itemOf(x.item)?.unit || UNIT_OF[x.item])) || UNITS.find((u) => u.id === 'piece');
 const hands = () => cashBalances(S.cash || [], S.txns, S.currency);
-const isToday = (ts) => ts && monthKey(ts) === monthKey(Date.now()) && solarDay(ts) === solarDay(Date.now());
-const unpaidToday = () => S.grocery.filter((x) => x.bought && !x.deleted && x.boughtBy === S.me && !x.paidTx && isToday(x.boughtTs));
 const member = (id) => S.members.find((m) => m.id === id);
 const face = (m, size = 'f40') => !m ? `<span class="face ${size}">❔</span>`
   : `<span class="face ${size}">${m.photo ? `<img src="${m.photo}" alt="">` : esc(m.emoji)}</span>`;
-const pic = (x) => x?.photo ? `<img src="${x.photo}" alt="">`
-  : PHOTO_ITEMS.has(x?.id) ? `<img src="img/${x.id}.jpg" alt="${esc(x.name)}" loading="lazy">` : esc(x?.icon ?? '❓');
-const unitPic = (u) => PHOTO_UNITS.has(u.id) ? `<img class="uimg" src="img/u_${u.id}.jpg" alt="${esc(u.name)}">` : u.icon;
 // Built-in categories plus the family's own (S.cats). Own ones come from phones, so always escape.
 const BASE_CATS = { in: IN_CATS, out: OUT_CATS };
 const catOf = (type, id) => { const c = findCat(BASE_CATS, S.cats || [], type, id); return { ...c, icon: esc(c.icon), name: esc(c.name) }; };
-const itemOf = (id) => S.catalog.find((c) => c.id === id);
 const dayLabel = (ts) => new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long' }).format(ts);
 
 function toast(t) {
@@ -132,7 +113,6 @@ const ROOMS = [
   ['report', '📊', 'گزارش ماه'],
   ['people', '👨‍👩‍👧', 'اعضای فامیل'],
   ['invite', '📲', 'دعوت به فامیل'],
-  ['editGrocery', '🛒✏️', 'تغییر سودا'],
   ['editBills', '🧾✏️', 'تغییر بل‌ها'],
   ['summary', '📅', 'خلاصه برای فامیل'],
 ];
@@ -144,85 +124,6 @@ function adminView() {
 }
 function editBar() {
   return V.edit ? `<div class="editbar"><span>✏️ <b>حالت تغییر</b></span><button data-a="editDone">✅ تمام</button></div>` : '';
-}
-
-function groceryView() {
-  const open = groceryFor(S.grocery, 'all');
-  const seg = `<div class="seg">
-    <button data-a="gmode" data-v="add" class="${V.gmode === 'add' ? 'on' : ''}">➕<small>اضافه</small></button>
-    <button data-a="gmode" data-v="list" class="${V.gmode === 'list' ? 'on' : ''}">🧺 ${open.length ? faDigits(open.length) : ''}<small>لست</small></button>
-    <button data-a="gmode" data-v="pantry" class="${V.gmode === 'pantry' ? 'on' : ''}">🏺<small>خانه</small></button>
-  </div>`;
-  const bal = buyer() && hands()[S.me];
-  const hand = bal ? `<button class="handcard" data-a="hand" data-v="${S.me}">🤲 <span class="lab2">خرچی در دست من</span> <b>${money(bal, S.currency)}</b></button>` : '';
-  const bodyG = V.gmode === 'add' ? groceryAdd(open) : V.gmode === 'pantry' ? pantryView() : groceryList();
-  return `<section>${hand}${seg}</section><section>${bodyG}</section>`;
-}
-
-function groceryAdd(open) {
-  const qty = Object.fromEntries(open.map((x) => [x.item, x.qty]));
-  const tiles = S.catalog.map((c) => `
-    <button class="tile ${qty[c.id] ? 'sel' : ''}" data-a="${V.edit ? 'noop' : 'gadd'}" data-v="${c.id}">
-      ${V.edit ? `<span class="xbtn" data-a="rmItem" data-v="${c.id}">✖</span>
-        <span class="micbtn ${c.voice ? 'has' : ''} ${V.recItem === c.id ? 'rec' : ''}" data-a="itemVoice" data-v="${c.id}">${V.recItem === c.id ? '⏹️' : '🎤'}</span>`
-        : c.voice ? '<span class="spk">🔊</span>' : ''}
-      ${qty[c.id] ? `<span class="badge">${faDigits(qty[c.id])}</span>` : ''}
-      <span class="pic">${pic(c)}</span><small>${esc(c.name)}</small>
-    </button>`).join('');
-  const newTile = V.edit ? '' : '<button class="tile add newitem" data-a="newItem"><span class="pic">➕</span><small>چیز نو</small></button>';
-  const editBtns = V.edit ? `
-    <div class="row" style="margin-top:14px">
-      <button class="tile add" data-a="editDone" style="flex:1"><span class="pic">✅</span><small>تمام</small></button>
-    </div>` : '';
-  return `<div class="grid">${tiles}${newTile}</div>${editBtns}`;
-}
-
-// How much is left at home: 🟢 full · 🟡 half · 🔴 empty (empty goes on the list).
-function pantryView() {
-  const dot = { full: '🟢', half: '🟡', empty: '🔴' };
-  return `<div class="grid">${pantryOrder(S.catalog).map((c) => `
-    <button class="tile lvl-${c.stock || 'none'}" data-a="stock" data-v="${c.id}">
-      <span class="badge lvl">${dot[c.stock] || '⚪'}</span>
-      <span class="pic">${pic(c)}</span><small>${esc(c.name)}</small></button>`).join('')}</div>
-    <p class="lbl" style="margin-top:14px;text-align:center">🟢 پُر · 🟡 نیم · 🔴 خلاص · ⚪</p>`;
-}
-
-function groceryList() {
-  const chips = [['all', '🧺', 'همه'], ['free', '✋', 'بی‌صاحب'], ...S.members.filter((m) => !m.deleted).map((m) => [m.id, null, esc(m.name)])].map(([id, ic, nm]) => {
-    const n = groceryFor(S.grocery, id).length;
-    return `<button class="chip col ${V.gfilter === id ? 'on' : ''}" data-a="gfilter" data-v="${id}">
-      <span class="row1">${ic ?? face(member(id), 'f40')}<b>${faDigits(n)}</b></span><span class="lab">${nm}</span></button>`;
-  }).join('');
-  const rows = groceryFor(S.grocery, V.gfilter);
-  const today = monthKey(Date.now()) + solarDay(Date.now());
-  const done = S.grocery.filter((x) => x.bought && !x.deleted && (monthKey(x.boughtTs) + solarDay(x.boughtTs)) === today);
-  const row = (x, isDone) => {
-    const c = itemOf(x.item) || { icon: '❓' };
-    const cl = member(x.claimedBy);
-    const u = unitOf(x);
-    const lp = isDone || !buyer() ? null : lastPrice(S.grocery, x.item);
-    return `<div class="item ${isDone ? 'done' : ''}">
-      <span class="pic" data-a="play" data-v="${x.item}">${pic(c)}</span>
-      ${isDone ? '' : `<button class="round" data-a="gminus" data-v="${x.id}">${L('➖', 'کم')}</button>`}
-      <span class="qty">${faDigits(x.qty)}</span>
-      <button class="unit" data-a="${isDone ? 'noop' : 'gunit'}" data-v="${x.id}">${unitPic(u)}<small>${u.name}</small></button>
-      <span class="meta grow">
-        <span class="faces">${x.addedBy.map((id) => face(member(id), 'f24')).join('')}</span>
-        ${isDone ? (x.price ? `<small class="lp">${money(x.price, x.currency || S.currency)}</small>` : '')
-          : lp ? `<small class="lp">قیمت قبلی ${money(lp.price, S.currency)}</small>` : ''}
-      </span>
-      ${!buyer() ? (cl ? `<span class="claim">${face(cl, 'f40')}<span class="lab">${esc(cl.name) || 'گرفته'}</span></span>` : '')
-        : isDone ? `<button class="round" data-a="gundo" data-v="${x.id}">${L('↩️', 'پس')}</button>` : `
-        <button class="claim ${x.claimedBy === S.me ? 'mine' : ''}" data-a="gclaim" data-v="${x.id}">${cl ? face(cl, 'f40') : '✋'}<span class="lab">${cl ? esc(cl.name) || 'گرفته' : 'من می‌خرم'}</span></button>
-        <button class="round ok" data-a="gbought" data-v="${x.id}">${L('✅', 'خریدم')}</button>`}
-    </div>`;
-  };
-  const unpaid = buyer() ? unpaidToday() : [];
-  return `<div class="chips">${chips}<button class="chip col wa" data-a="waList"><span class="row1">💬</span><span class="lab">واتساپ</span></button><button class="chip col" data-a="shareList"><span class="row1">📤</span><span class="lab">عکس لست</span></button></div>
-    <div class="list">${rows.length ? rows.map((x) => row(x, false)).join('') : '<div class="empty">🧺</div>'}</div>
-    ${buyer() && rows.length > 1 ? `<button class="save buyall" data-a="gbuyAll">✅✅ همه را خریدم</button>` : ''}
-    ${done.length && buyer() ? `<div class="list" style="margin-top:18px">${done.map((x) => row(x, true)).join('')}</div>` : ''}
-    ${unpaid.length ? `<button class="save paytrip" data-a="shopPay">🛒💸 <span>${faDigits(unpaid.length)} چیز خریدی · چند پول دادی؟</span></button>` : ''}`;
 }
 
 function moneyView() {
@@ -389,10 +290,8 @@ function sheetTitle(M) {
       if (M.type === 'in' && M.cat === 'abroad' && !M.country) return 'از کدام کشور؟';
       return (M.type === 'in' ? 'پول آمد' : 'مصرف') + (M.cat ? ' — ' + catOf(M.type, M.cat).name : ' — برای چه؟');
     case 'txView': { const x = S.txns.find((t) => t.id === M.id); return x ? catOf(x.type, x.cat).name : ''; }
-    case 'item': return 'چیز نو برای لست';
     case 'catNew': return M.type === 'in' ? 'نوع نو برای پول آمد' : 'نوع نو برای مصرف';
     case 'bill': return M.kindId ? 'روز پرداخت در ماه' : 'بل نو — کدام بل؟';
-    case 'price': { const x = S.grocery.find((g) => g.id === M.id); return 'قیمت ' + (itemOf(x?.item)?.name || ''); }
     case 'give': return M.to ? 'خرچی برای ' + nm(M.to) : 'خرچی — به کی؟';
     case 'hand': return 'خرچی در دست ' + nm(M.id);
     case 'return': return 'پس دادن باقی پول';
@@ -432,8 +331,6 @@ function modalView() {
           `<button class="tile ${M.emoji === f && !M.photo ? 'sel' : ''}" style="min-height:0;padding:6px" data-a="memoji" data-v="${f}"><span class="pic" style="font-size:36px;height:44px;line-height:44px">${f}</span></button>`).join('')}</div>
         <p><input class="name" id="mname" placeholder="نام (اختیاری)" value="${esc(M.name)}"></p>
         ${first || M.self ? '' : `<div class="seg">
-          <button data-a="mrole" data-v="orderer" class="${M.role === 'orderer' ? 'on' : ''}">🙋<small>سفارش</small></button>
-          <button data-a="mrole" data-v="helper" class="${M.role === 'helper' ? 'on' : ''}">🛒<small>خریدار</small></button>
           <button data-a="mrole" data-v="earner" class="${M.role === 'earner' ? 'on' : ''}">💰<small>نان‌آور</small></button>
           <button data-a="mrole" data-v="admin" class="${M.role === 'admin' ? 'on' : ''}">👑<small>مدیر</small></button></div>`}
         <button class="save" data-a="msave" ${M.emoji || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
@@ -462,14 +359,6 @@ function modalView() {
           <span></span><button data-a="pinTap" data-v="9" ${locked ? 'disabled' : ''}>${PIN_KEYS[9]}</button>
           <button data-a="pinBack">⌫</button></div>`);
     }
-    case 'price': {
-      const x = S.grocery.find((g) => g.id === M.id);
-      const u = unitOf(x);
-      return sheet(`<span class="headpic">${pic(itemOf(x.item))}</span> ${faDigits(x.qty)} ${unitPic(u)}`, `${keypad(M.amount, S.currency)}
-        <div class="row" style="gap:10px">
-          <button class="save" style="background:#777" data-a="close">⏭️ بعداً</button>
-          <button class="save" data-a="priceSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button></div>`);
-    }
     case 'give':
       if (!M.to) {
         return sheet('🤲', `<div class="grid">${S.members.filter((m) => !m.deleted && m.id !== S.me).map((m) => `
@@ -486,7 +375,7 @@ function modalView() {
         ...S.txns.filter((x) => !x.deleted && x.by === p && x.paidFrom === 'hand' && x.currency === S.currency)
           .map((x) => ({ ts: x.ts, icon: catOf('out', x.cat).icon, amt: -x.amount, who: null })),
       ].sort((a, b) => b.ts - a.ts).slice(0, 30);
-      const canReturn = bal > 0 && (p === S.me || role() !== 'helper');
+      const canReturn = bal > 0;
       return sheet(`🤲 ${face(member(p), 'f40')}`, `
         <div class="display">${money(bal, S.currency)}</div>
         <div class="list" style="margin-top:10px">${ev.map((e) => `<div class="tx"><span class="cat">${e.icon}</span>
@@ -651,7 +540,7 @@ function modalView() {
           <div class="seg cur" style="width:190px">
             <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">افغانی</button>
             <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">دالر</button></div></div>
-        ${M.type === 'out' && (hands()[S.me] || role() === 'helper') ? `<div class="seg" style="margin-bottom:10px">
+        ${M.type === 'out' && hands()[S.me] ? `<div class="seg" style="margin-bottom:10px">
           <button data-a="txFrom" data-v="hand" class="${M.paidFrom === 'hand' ? 'on' : ''}">🤲<small>از خرچی ${money(hands()[S.me] || 0, M.currency)}</small></button>
           <button data-a="txFrom" data-v="home" class="${M.paidFrom !== 'hand' ? 'on' : ''}">🏠<small>از پول خانه</small></button></div>` : ''}
         ${keypad(M.feeMode ? M.fee || '' : M.amount, M.currency)}
@@ -681,21 +570,6 @@ function modalView() {
         ${x.deleted && isAdmin() ? '<button class="save" data-a="txRestore">↩️ دوباره آوردن</button>'
           : canDel && !x.deleted ? '<button class="save danger" data-a="txDel">🗑️ پاک کردن</button>' : ''}`);
     }
-    case 'item':
-    {
-      const found = searchPicker(PICKER, M.q);
-      const list = found.length ? found : PICKER;
-      return sheet('➕🛒', `
-        <div class="row" style="justify-content:center;gap:14px;margin-bottom:10px">
-          <span class="face f80" style="border-radius:20px">${M.photo ? `<img src="${M.photo}" alt="">` : M.icon ?? '❔'}</span>
-          <button class="iconbtn" data-a="iphoto">${L('📷', 'عکس خود چیز')}</button></div>
-        <p style="margin:0 0 8px"><input class="name" id="iname" placeholder="نام را بنویسید — مثلاً انار" value="${esc(M.name)}" autocomplete="off"></p>
-        ${M.q && !found.length ? '<p class="lbl" style="text-align:center">تصویر پیدا نشد — یکی را انتخاب کنید یا 📷 عکس بگیرید</p>' : ''}
-        <div class="grid picker">${list.map((p) => `
-          <button class="tile ${M.icon === p.icon && !M.photo ? 'sel' : ''}" data-a="iemoji" data-v="${PICKER.indexOf(p)}">
-            <span class="pic">${p.icon}</span><small>${p.name}</small></button>`).join('')}</div>
-        <button class="save" data-a="isave" ${M.icon || M.photo ? '' : 'disabled'}>✅ ثبت و اضافه به لست</button>`);
-    }
     case 'bill':
       if (!M.kindId) {
         return sheet('➕🧾', `<div class="grid">${BILL_KINDS.map((c) =>
@@ -712,10 +586,10 @@ function render() {
   if (!S.members.length && !V.modal && !V.waiting) V.modal = { kind: 'setup' };
   if (S.members.length && !member(S.me) && !V.modal && !V.waiting) V.modal = { kind: 'who' };
   if (V.waiting && !S.members.length) { $app.innerHTML = '<div class="empty" style="opacity:1">☁️⏳</div>'; return; }
-  if (!canTab(role(), V.tab)) V.tab = 'grocery';
+  if (!canTab(role(), V.tab)) V.tab = 'money';
   S.cash ||= []; S.loans ||= []; S.jars ||= []; S.contacts ||= []; S.cats ||= [];
   const body = S.members.length
-    ? ({ grocery: groceryView, money: moneyView, loans: loansViewUI, bills: billsView, admin: adminView }[V.tab] || groceryView)()
+    ? ({ money: moneyView, loans: loansViewUI, bills: billsView, admin: adminView }[V.tab] || moneyView)()
     : '';
   const focus = document.activeElement?.id;
   const typed = [...$app.querySelectorAll('input[id]')].map((el) => [el.id, el.value]);
@@ -783,60 +657,6 @@ async function toggleVoice() {
   if (started) { M.recording = true; render(); }
 }
 
-// Play a grocery picture's recorded name (fetched from the cloud the first time).
-const voiceCache = new Map();
-async function play(itemId) {
-  const v = itemOf(itemId)?.voice;
-  if (!v) return;
-  let src = v;
-  if (v.startsWith('media:')) {
-    if (!voiceCache.has(v)) voiceCache.set(v, SY ? SY.getMedia(v.slice(6)) : Promise.resolve(null));
-    src = await voiceCache.get(v);
-  }
-  if (!safeAudio(src) || src.startsWith('media:')) return;
-  new Audio(src).play().catch(() => {});
-}
-
-// ---------- share list as a picture (WhatsApp) ----------
-async function shareList() {
-  const lines = groceryFor(S.grocery, V.gfilter);
-  if (!lines.length) { toast('🧺'); return; }
-  const W = 600, RH = 96, k = 2;
-  const c = Object.assign(document.createElement('canvas'), { width: W * k, height: (90 + lines.length * RH + 20) * k });
-  const g = c.getContext('2d');
-  g.scale(k, k);
-  g.fillStyle = '#f6f3ec'; g.fillRect(0, 0, W, c.height);
-  g.direction = 'rtl'; g.textBaseline = 'middle'; g.fillStyle = '#1d1d1d';
-  g.font = '700 34px system-ui, sans-serif'; g.textAlign = 'right';
-  g.fillText(`🛒 سودا · ${dayLabel(Date.now())}`, W - 20, 45);
-  const img = async (src) => { try { return await createImageBitmap(await (await fetch(src)).blob()); } catch { return null; } };
-  for (const [i, x] of lines.entries()) {
-    const y = 90 + i * RH;
-    g.fillStyle = '#fff'; g.beginPath(); g.roundRect(12, y + 4, W - 24, RH - 8, 18); g.fill();
-    const item = itemOf(x.item) || { icon: '❓', name: '' };
-    const u = unitOf(x);
-    const photoSrc = item.photo && safeImage(item.photo)?.startsWith('data:') ? item.photo : PHOTO_ITEMS.has(item.id) ? `img/${item.id}.jpg` : null;
-    const b = photoSrc ? await img(photoSrc) : null;
-    if (b) { g.save(); g.beginPath(); g.roundRect(W - 96, y + 12, 72, 72, 12); g.clip(); g.drawImage(b, W - 96, y + 12, 72, 72); g.restore(); }
-    else { g.font = '58px system-ui, sans-serif'; g.textAlign = 'center'; g.fillStyle = '#000'; g.fillText(item.icon, W - 60, y + RH / 2 + 2); }
-    const ub = PHOTO_UNITS.has(u.id) ? await img(`img/u_${u.id}.jpg`) : null;
-    g.textAlign = 'right'; g.fillStyle = '#1d1d1d';
-    g.font = '700 40px system-ui, sans-serif'; g.fillText(faDigits(x.qty), W - 115, y + RH / 2);
-    if (ub) { g.save(); g.beginPath(); g.roundRect(W - 205, y + RH / 2 - 22, 44, 44, 8); g.clip(); g.drawImage(ub, W - 205, y + RH / 2 - 22, 44, 44); g.restore(); }
-    else { g.font = '34px system-ui, sans-serif'; g.fillText(u.icon, W - 175, y + RH / 2); }
-    g.font = '22px system-ui, sans-serif'; g.fillStyle = '#555'; g.fillText(`${u.name} · ${item.name}`, W - 225, y + RH / 2);
-    const cl = member(x.claimedBy);
-    if (cl && !cl.photo) { g.font = '44px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(cl.emoji, 50, y + RH / 2); }
-  }
-  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-  const file = new File([blob], 'sawda.png', { type: 'image/png' });
-  try {
-    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'سودا' }); return; }
-  } catch { return; }
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'sawda.png' });
-  a.click();
-}
-
 // ---------- actions ----------
 // ---------- admin PIN ----------
 // Admin screens (report, people, editing lists, deleting others' entries) need the picture PIN.
@@ -890,7 +710,7 @@ document.addEventListener('visibilitychange', () => {
   unlockedUntil = 0;
   pocketOpen = false;
   if (['pocket', 'pocketAdd'].includes(V.modal?.kind) || V.modal?.target === 'pocket') { V.modal = null; render(); }
-  if (V.tab === 'admin' || V.edit) { V.tab = 'grocery'; V.room = null; V.edit = false; render(); }
+  if (V.tab === 'admin' || V.edit) { V.tab = 'money'; V.room = null; V.edit = false; render(); }
 });
 
 const A = {
@@ -899,8 +719,7 @@ const A = {
     if (v === 'admin') requireAdmin(go); else go();
   },
   room: (v) => requireAdmin(() => {
-    if (v === 'editGrocery') Object.assign(V, { tab: 'grocery', gmode: 'add', edit: true });
-    else if (v === 'editBills') Object.assign(V, { tab: 'bills', edit: true });
+    if (v === 'editBills') Object.assign(V, { tab: 'bills', edit: true });
     else if (v === 'report') V.room = 'report';
     else { if (['people', 'invite', 'summary'].includes(v)) A[v](); return; }   // these open as pop-ups
     V.modal = null; render(); scrollTo(0, 0);
@@ -921,7 +740,7 @@ const A = {
   people: () => requireAdmin(() => { V.modal = { kind: 'people' }; render(); }),
   pinTap: (v) => pinTap(+v),
   pinBack: () => { V.modal.seq.pop(); render(); },
-  newSelf: () => { V.modal = { kind: 'member', role: 'helper', self: true }; render(); },
+  newSelf: () => { V.modal = { kind: 'member', role: 'earner', self: true }; render(); },
   roleCycle: (v) => requireAdmin(() => commit(() => {
     const m = member(v);
     const next = nextRole(roleOf(m));
@@ -930,7 +749,7 @@ const A = {
   invite: () => { V.modal = { kind: 'invite' }; render(); },
   shareLink: () => navigator.share?.({ title: 'حساب خانواده', url: SY.inviteLink() }).catch(() => {}),
   copyLink: async () => { try { await navigator.clipboard.writeText(SY.inviteLink()); toast('📋✅'); } catch { toast('📋❌'); } },
-  newMember: () => { V.modal = { kind: 'member', role: 'helper' }; render(); },
+  newMember: () => { V.modal = { kind: 'member', role: 'earner' }; render(); },
   rmMember: (v) => commit(() => { member(v).deleted = true; log('rmMember', '👤🗑️', member(v).name); }),
   memoji: (v) => { V.modal.emoji = v; V.modal.photo = null; keepName('mname'); render(); },
   mphoto: () => { keepName('mname'); takePhoto(240, (p) => { V.modal.photo = p; render(); }); },
@@ -938,7 +757,7 @@ const A = {
   msave: () => {
     keepName('mname');
     const M = V.modal, setup = M.kind === 'setup';
-    const m = { id: uid(), emoji: M.emoji || '🙂', photo: M.photo || null, name: M.name || '', role: setup ? 'admin' : M.self ? 'helper' : M.role, ts: Date.now() };
+    const m = { id: uid(), emoji: M.emoji || '🙂', photo: M.photo || null, name: M.name || '', role: setup ? 'admin' : M.self ? 'earner' : M.role, ts: Date.now() };
     commit(() => {
       S.members.push(m);
       if (setup || M.self) { S.me = m.id; localStorage.setItem('ff-me', m.id); }
@@ -949,8 +768,6 @@ const A = {
     });
   },
 
-  gmode: (v) => { V.gmode = v; V.edit = false; render(); },
-  gfilter: (v) => { V.gfilter = v; render(); },
   noop: () => {},
   pocket: async () => {
     if (!P || P.owner !== S.me) { P = await loadPocket(S.me); P.owner = S.me; }
@@ -972,42 +789,12 @@ const A = {
     await savePocket(S.me, P);
     render();
   },
-  stock: (v) => commit(() => {
-    const c = itemOf(v);
-    c.stock = nextLevel(c.stock); c.stockBy = S.me; c.stockTs = Date.now();
-    log('stock', { full: '🟢', half: '🟡', empty: '🔴' }[c.stock] || '⚪', c.name);
-    if (c.stock === 'empty' && !S.grocery.some((x) => x.item === v && !x.bought && !x.deleted)) {
-      S.grocery = addGrocery(S.grocery, v, S.me, Date.now(), uid);   // empty at home → on the list
-    }
-  }),
   summary: () => { V.modal = { kind: 'summary', page: 0 }; render(); },
   sumNav: (v) => { V.modal.page += +v; render(); },
-  play: (v) => play(v),
-  shareList: () => shareList(),
-  waList: () => sendWhatsApp(listText(S.grocery, (x) => itemOf(x.item)?.name || '', (x) => unitOf(x).name)),
   waReport: () => {
     V.month ||= monthKey(Date.now());
     sendWhatsApp(reportText({ txns: S.txns, currency: S.currency, month: V.month, person: rawName,
       cat: (id) => { const c = findCat(BASE_CATS, S.cats || [], 'out', id); return [c.icon, c.name]; } }));
-  },
-  gunit: (v) => commit(() => {
-    const x = S.grocery.find((g) => g.id === v);
-    const i = UNITS.findIndex((u) => u.id === unitOf(x).id);
-    x.unit = UNITS[(i + 1) % UNITS.length].id;
-  }),
-  gprice: (v) => { if (!buyer()) return; V.modal = { kind: 'price', id: v, amount: String(S.grocery.find((g) => g.id === v)?.price || '') }; render(); },
-  priceSave: () => commit(() => {
-    const x = S.grocery.find((g) => g.id === V.modal.id);
-    x.price = +V.modal.amount; x.currency = S.currency; x.unit = unitOf(x).id;
-    log('price', '💲', `${itemOf(x.item)?.name} ${money(x.price, x.currency)}`);
-    V.modal = null;
-  }),
-  shopPay: () => { if (!buyer()) return;
-    const lines = unpaidToday();
-    const fromHand = !!hands()[S.me] || role() === 'helper';
-    V.modal = { kind: 'tx', type: 'out', cat: 'food', amount: String(linesTotal(lines) || ''), currency: S.currency,
-      paidFrom: fromHand ? 'hand' : null, lines: lines.map((x) => x.id) };
-    render();
   },
   txFrom: (v) => { V.modal.paidFrom = v === 'hand' ? 'hand' : null; render(); },
   give: () => { V.modal = { kind: 'give', amount: '' }; render(); },
@@ -1028,63 +815,6 @@ const A = {
     log('return', '↩️', `${member(M.from)?.name || ''} ${money(+M.amount, S.currency)}`);
     V.modal = { kind: 'hand', id: M.from };
   }),
-  itemVoice: (v) => {
-    if (V.recItem && V.recItem !== v) return;
-    if (V.recItem === v) { record(0); return; }
-    record(3000, (d) => {
-      V.recItem = null;
-      const safe = safeAudio(d);
-      if (safe) commit(() => { itemOf(v).voice = safe; log('voice', '🎤', itemOf(v)?.name); });
-      else render();
-      if (safe) setTimeout(() => play(v), 200);
-    }).then((ok) => { if (ok) { V.recItem = v; render(); } });
-  },
-  gadd: (v, el) => {
-    play(v);
-    commit(() => { S.grocery = addGrocery(S.grocery, v, S.me, Date.now(), uid); log('gadd', '🛒➕', itemOf(v)?.name); });
-    document.querySelector(`[data-a="gadd"][data-v="${v}"]`)?.classList.add('pop');
-    navigator.vibrate?.(20);
-  },
-  gminus: (v) => commit(() => {
-    const x = S.grocery.find((g) => g.id === v);
-    if (--x.qty <= 0) x.deleted = true;
-    log('gminus', '🛒➖', itemOf(x.item)?.name);
-  }),
-  gclaim: (v) => { if (!buyer()) return;
-    const x = S.grocery.find((g) => g.id === v);
-    if (x.claimedBy && x.claimedBy !== S.me && !isAdmin()) return toast('✋❌');
-    commit(() => { x.claimedBy = x.claimedBy === S.me ? null : S.me; log('gclaim', '✋', itemOf(x.item)?.name); });
-  },
-  // ✅ just marks it bought; the money is asked once for the whole trip (🛒💸 button under the list).
-  gbought: (v) => buyer() && commit(() => markBought([v])),
-  gbuyAll: () => buyer() && commit(() => markBought(groceryFor(S.grocery, V.gfilter).map((x) => x.id))),
-  gundo: (v) => buyer() && commit(() => { const x = S.grocery.find((g) => g.id === v); x.bought = false; }),
-  rmItem: (v) => commit(() => { log('rmItem', '🛒🗑️', itemOf(v)?.name); S.catalog = S.catalog.filter((c) => c.id !== v); }),
-  newItem: () => { V.modal = { kind: 'item', name: '', q: '' }; render(); },
-  iemoji: (v) => {
-    const M = V.modal, p = PICKER[+v];
-    if (!p) return;
-    keepName('iname');
-    M.icon = p.icon; M.photo = null;
-    if (!M.name || M.autoName || p.name.includes(M.name.trim())) { M.name = p.name; M.autoName = true; }   // typed part of a picture's name → use its full name
-    const box = document.getElementById(M.kind === 'item' ? 'iname' : 'catname');
-    if (box) box.value = M.name;   // render() keeps what is in the box, so update it first
-    render();
-  },
-  iphoto: () => { keepName('iname'); takePhoto(300, (p) => { V.modal.photo = p; render(); }); },
-  isave: () => {
-    keepName('iname');
-    const M = V.modal;
-    const picked = PICKER.find((p) => p.icon === M.icon);
-    const item = { id: uid(), icon: M.icon || '📦', photo: M.photo || null, name: (M.name || picked?.name || '').slice(0, 60), ord: Date.now(), unit: 'piece' };
-    commit(() => {
-      S.catalog.push(item);
-      S.grocery = addGrocery(S.grocery, item.id, S.me, Date.now(), uid);   // new item goes straight on the list
-      log('addItem', '🛒✨', item.name);
-      V.modal = null;
-    });
-    toast('🛒✅');
-  },
 
   cur: (v) => commit(() => { S.currency = v; }),
   addTx: (v, el) => { V.modal = { kind: 'tx', type: v, cat: el.dataset.cat || null, amount: '', currency: S.currency, paidFrom: null }; render(); },
@@ -1096,7 +826,7 @@ const A = {
     keepName('catname');
     M.icon = p.icon;
     if (!M.name || M.autoName || p.name.includes(M.name.trim())) { M.name = p.name; M.autoName = true; }   // typed part of a picture's name → use its full name
-    const box = document.getElementById(M.kind === 'item' ? 'iname' : 'catname');
+    const box = document.getElementById('catname');
     if (box) box.value = M.name;   // render() keeps what is in the box, so update it first
     render();
   },
@@ -1213,7 +943,6 @@ const A = {
       ...(M.type === 'in' && M.cat === 'abroad' ? { from: M.from || null, country: M.country || null, fee: +M.fee || 0 } : {}) };
     commit(() => {
       S.txns.push(x);
-      for (const id of M.lines || []) { const g = S.grocery.find((l) => l.id === id); if (g) g.paidTx = x.id; }
       log('tx', `${M.type === 'in' ? '⬇️' : '⬆️'}${catOf(M.type, M.cat).icon}`, money(x.amount, x.currency));
       V.modal = null;
     });
@@ -1271,11 +1000,8 @@ function keepName(id) {
 document.addEventListener('input', (e) => {
   if (e.target.id === 'catname' && V.modal?.kind === 'catNew') {
     V.modal.name = e.target.value; V.modal.q = e.target.value; V.modal.autoName = false;
-    render(); return;
+    render();
   }
-  if (e.target.id !== 'iname' || V.modal?.kind !== 'item') return;
-  V.modal.name = e.target.value; V.modal.q = e.target.value; V.modal.autoName = false;
-  render();
 });
 
 document.addEventListener('click', (e) => {

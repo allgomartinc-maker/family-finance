@@ -76,16 +76,15 @@ export const CUR_NAME = { AFN: 'افغانی', USD: 'دالر' };
 export const money = (n, cur) => `${nf.format(n)} ${CUR_NAME[cur] || CUR_NAME.AFN}`;
 
 // ---------- roles ----------
-// admin: everything (PIN) · earner: groceries, own money, bills · helper: groceries only ·
-// orderer: only says what the home needs (add to list, pantry levels); never buys or sees money.
-export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : m?.role === 'earner' || m?.role === 'member' ? 'earner'
-  : m?.role === 'orderer' ? 'orderer' : 'helper');
-const TABS = { admin: ['grocery', 'money', 'loans', 'bills', 'admin'], earner: ['grocery', 'money', 'loans', 'bills'], helper: ['grocery'], orderer: ['grocery'] };
-export const canBuy = (role) => role !== 'orderer';
-export const nextRole = (role) => ({ orderer: 'helper', helper: 'earner', earner: 'admin', admin: 'orderer' }[role] || 'helper');
-export const canTab = (role, tab) => (TABS[role] || TABS.helper).includes(tab);
+// admin: everything (PIN) · earner: own money, loans, bills.
+// Old roles (member, helper, orderer) are read as earner.
+export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : 'earner');
+const TABS = { admin: ['money', 'loans', 'bills', 'admin'], earner: ['money', 'loans', 'bills'] };
+export const canBuy = () => true;
+export const nextRole = (role) => (role === 'earner' ? 'admin' : 'earner');
+export const canTab = (role, tab) => (TABS[role] || TABS.earner).includes(tab);
 // Bottom bar order: front places first, the admin door (🗝️) always last.
-export const navTabs = (role) => [...(TABS[role] || TABS.helper)];
+export const navTabs = (role) => [...(TABS[role] || TABS.earner)];
 export const visibleTxns = (txns, role, me) => (role === 'admin' ? txns : txns.filter((x) => x.by === me));
 
 // ---------- cash in hand (خرچی) ----------
