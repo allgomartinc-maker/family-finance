@@ -169,20 +169,27 @@ function moneyView() {
     </div>
     ${jarsRow()}
   </section>
-  <section class="list">${list.length ? list.map(txRow).join('') : '<div class="empty">💰</div>'}</section>`;
+  <section class="list">${list.length ? list.map((x) => txRow(x, true)).join('') : '<div class="empty">💰</div>'}</section>`;
 }
 
 const curSwitch = () => `<div class="seg cur" style="width:190px">
   <button data-a="cur" data-v="AFN" class="${S.currency === 'AFN' ? 'on' : ''}" style="font-size:24px">افغانی</button>
   <button data-a="cur" data-v="USD" class="${S.currency === 'USD' ? 'on' : ''}" style="font-size:24px">دالر</button></div>`;
 
-const txRow = (x) => `<button class="tx ${x.deleted ? 'del' : ''}" data-a="txView" data-v="${x.id}">
+// One money row; on the Money page your own rows (all rows for admin) get ✏️ edit and 🗑️ delete right under them.
+const txRow = (x, actions = false) => {
+  const canEdit = actions && !x.deleted && (isAdmin() || x.by === S.me);
+  const acts = !canEdit ? '' : V.confirmTx === x.id
+    ? `<div class="acts"><b class="out-c">پاک شود؟</b><button class="mini danger" data-a="txDelYes" data-v="${x.id}">🗑️ بلی</button><button class="mini" data-a="txDelNo">↩️ نه</button></div>`
+    : `<div class="acts"><button class="mini" data-a="txEdit" data-v="${x.id}">✏️ تغییر</button><button class="mini" data-a="txDelAsk" data-v="${x.id}">🗑️ پاک</button></div>`;
+  return `<div class="txw">${`<button class="tx ${x.deleted ? 'del' : ''}" data-a="txView" data-v="${x.id}">
   <span class="cat">${catOf(x.type, x.cat).icon}${x.country ? `<small>${countryOf(x.country)?.icon || ''}</small>` : ''}</span>
   <span class="grow" style="text-align:start">
     <span class="amt ${x.type}-c">${x.type === 'in' ? '⬇️' : '⬆️'} ${money(x.amount, x.currency)}</span><br>
     <span class="lbl">${catOf(x.type, x.cat).name} · ${who(x.by)} · ${dayLabel(x.ts)}</span>${x.note ? `<br><span class="note">📝 ${esc(x.note)}</span>` : ''}</span>
   ${x.paidFrom === 'hand' ? '🤲' : ''}${x.photo ? '📷' : ''}${x.voice ? '🎤' : ''} ${face(member(x.by), 'f40')}
-</button>`;
+</button>`}${acts}</div>`;
+};
 
 function jarsRow() {
   const jars = S.jars.filter((j) => j.kind === 'jar' && !j.deleted && j.currency === S.currency);
@@ -328,7 +335,7 @@ function reportView() {
     })()}
     ${Object.keys(hands()).length ? `<div class="card"><h3>🤲 خرچی در دست</h3><div class="chips">${Object.entries(hands()).map(([id, v]) =>
       `<button class="chip col" data-a="hand" data-v="${id}"><span class="row1">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></span><span class="lab">${who(id)}</span></button>`).join('')}</div></div>` : ''}
-    ${deleted.length ? `<div class="card"><h3>🗑️ پاک‌شده‌ها</h3><div class="list">${deleted.map(txRow).join('')}</div></div>` : ''}
+    ${deleted.length ? `<div class="card"><h3>🗑️ پاک‌شده‌ها</h3><div class="list">${deleted.map((x) => txRow(x)).join('')}</div></div>` : ''}
     <div class="card"><h3>🕘 تاریخچه (کی، چه کرد)</h3><div class="log">
       ${S.log.slice(0, 60).map((l) => `<div class="row">${face(member(l.by), 'f24')}
         <span style="font-size:24px">${esc(l.icon)}</span><span class="grow">${esc(l.extra)}</span>
@@ -353,7 +360,7 @@ function sheetTitle(M) {
     case 'tx':
       if (M.type === 'in' && M.cat === 'abroad' && !M.from) return 'پول از خارج — کی روان کرد؟';
       if (M.type === 'in' && M.cat === 'abroad' && !M.country) return 'از کدام کشور؟';
-      return (M.type === 'in' ? 'پول آمد' : 'مصرف') + (M.cat ? ' — ' + catOf(M.type, M.cat).name : ' — برای چه؟');
+      return (M.editId ? '✏️ تغییر ' : '') + (M.type === 'in' ? 'پول آمد' : 'مصرف') + (M.cat ? ' — ' + catOf(M.type, M.cat).name : ' — برای چه؟');
     case 'txView': { const x = S.txns.find((t) => t.id === M.id); return x ? catOf(x.type, x.cat).name : ''; }
     case 'catNew': return M.type === 'in' ? 'نوع نو برای پول آمد' : 'نوع نو برای مصرف';
     case 'give': return M.to ? 'خرچی برای ' + nm(M.to) : 'خرچی — به کی؟';
@@ -619,6 +626,7 @@ function modalView() {
       }
       const abroad = M.type === 'in' && M.cat === 'abroad';
       return sheet(head, `
+        ${M.editId ? `<div class="row" style="justify-content:center;margin-bottom:10px"><button class="chip" data-a="txCatChange">${catOf(M.type, M.cat).icon} ${catOf(M.type, M.cat).name} ✏️ <small>تغییر نوع</small></button></div>` : ''}
         ${abroad ? `<div class="row" style="justify-content:center;margin-bottom:8px">${face(contact(M.from), 'f40')}
           <span style="font-size:30px">${countryOf(M.country)?.icon || ''}</span>
           <button class="chip ${M.feeMode ? 'on' : ''}" data-a="txFeeMode">🏦 کمیشن <b>${M.fee ? money(+M.fee, M.currency) : '۰'}</b></button></div>` : ''}
@@ -636,7 +644,7 @@ function modalView() {
           <button class="iconbtn" data-a="txVoice" style="${M.recording ? 'background:var(--out)' : ''}">${L(M.recording ? '⏹️' : M.voice ? '✅' : '🎤', M.recording ? 'ایستاد' : 'صدا')}</button>
         </div>
         ${M.noteOpen || M.note ? `<label class="notebox">📝<input id="txnote" maxlength="120" placeholder="یادداشت — چرا؟ (اختیاری)" value="${esc(M.note)}" autocomplete="off"></label>` : ''}
-        ${M.photo ? `<img class="photo-prev" style="margin-top:10px;max-height:160px" src="${M.photo}" alt="">` : ''}
+        ${M.photo ? `<img class="photo-prev" style="margin-top:10px;max-height:160px" ${mediaAttr(M.photo)} alt="">` : ''}
         <button class="save" data-a="txSave" ${+M.amount > 0 && !M.recording ? '' : 'disabled'}>✅ ثبت</button>`);
     }
     case 'txView': {
@@ -654,7 +662,7 @@ function modalView() {
         ${x.photo ? `<img class="photo-prev" ${mediaAttr(x.photo)} alt="">` : ''}
         ${x.voice ? `<audio controls ${mediaAttr(x.voice)} style="width:100%;margin-top:10px"></audio>` : ''}
         ${x.deleted && isAdmin() ? '<button class="save" data-a="txRestore">↩️ دوباره آوردن</button>'
-          : canDel && !x.deleted ? '<button class="save danger" data-a="txDel">🗑️ پاک کردن</button>' : ''}`);
+          : canDel && !x.deleted ? `<button class="save" data-a="txEdit" data-v="${x.id}">✏️ تغییر</button><button class="save danger" data-a="txDel">🗑️ پاک کردن</button>` : ''}`);
     }
   }
   return '';
@@ -1051,6 +1059,21 @@ const A = {
   txSave: () => {
     const M = V.modal;
     const note = (document.getElementById('txnote')?.value ?? M.note ?? '').trim().slice(0, 120);
+    if (M.editId) {
+      const x = S.txns.find((t) => t.id === M.editId);
+      if (!x) return;
+      const was = money(x.amount, x.currency);
+      const abroad = x.type === 'in' && M.cat === 'abroad';
+      commit(() => {
+        Object.assign(x, { cat: M.cat, amount: +M.amount, currency: M.currency, note: note || null, photo: M.photo || null, voice: M.voice || null,
+          paidFrom: x.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null,
+          from: abroad ? M.from || null : null, country: abroad ? M.country || null : null, fee: abroad ? +M.fee || 0 : 0, editedBy: S.me, editedTs: Date.now() });
+        log('txEdit', '✏️' + catOf(x.type, x.cat).icon, `${was} → ${money(x.amount, x.currency)}`);
+        V.modal = null;
+      });
+      toast('✏️✅');
+      return;
+    }
     const x = { id: uid(), type: M.type, cat: M.cat, amount: +M.amount, currency: M.currency, by: S.me,
       ts: Date.now(), note: note || null, photo: M.photo || null, voice: M.voice || null, billId: M.billId || null,
       paidFrom: M.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null,
@@ -1063,6 +1086,29 @@ const A = {
     toast(M.type === 'in' ? '⬇️✅' : '⬆️✅');
   },
   txView: (v) => { V.modal = { kind: 'txView', id: v }; render(); },
+  txEdit: (v) => {
+    const x = S.txns.find((t) => t.id === v);
+    if (!x || x.deleted) return;
+    const go = () => {
+      V.confirmTx = null;
+      V.modal = { kind: 'tx', editId: x.id, type: x.type, cat: x.cat, amount: String(x.amount), currency: x.currency, paidFrom: x.paidFrom || null,
+        note: x.note || '', noteOpen: !!x.note, photo: x.photo || null, voice: x.voice || null, from: x.from || null, country: x.country || null, fee: x.fee ? String(x.fee) : '' };
+      render();
+    };
+    if (x.by === S.me) go(); else requireAdmin(go);   // changing someone else's entry needs the PIN
+  },
+  txCatChange: () => { V.modal.note = (document.getElementById('txnote')?.value ?? V.modal.note ?? '').trim(); V.modal.cat = null; render(); },
+  txDelAsk: (v) => { V.confirmTx = v; render(); },
+  txDelNo: () => { V.confirmTx = null; render(); },
+  txDelYes: (v) => {
+    const x = S.txns.find((t) => t.id === v);
+    if (!x) return;
+    const del = () => commit(() => {
+      x.deleted = true; x.deletedBy = S.me; V.confirmTx = null;
+      log('txDel', '🗑️' + catOf(x.type, x.cat).icon, money(x.amount, x.currency));
+    });
+    if (x.by === S.me) del(); else requireAdmin(del);
+  },
   txDel: () => {
     const x = S.txns.find((t) => t.id === V.modal.id);
     const del = () => commit(() => {

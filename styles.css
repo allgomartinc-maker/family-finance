@@ -374,3 +374,4 @@ input.name:focus { border-color: var(--lapis); outline: none; }
 .prow { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
 .prow:first-of-type { border-top: 0; }
 .prow .pl { font-size: 15px; font-weight: 700; margin-top: 2px; }
+.txw .acts { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin: 6px 4px 0; }
