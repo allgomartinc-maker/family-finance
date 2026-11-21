@@ -8,7 +8,7 @@ import {
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
 import { makePin, checkPin, PIN_LEN, PIN_KEYS } from './pin.js';
-import { newPassword, normUser, loginKeys, sealLogin, openLogin } from './login.js';
+import { newPassword, normUser, normPass, loginKeys, sealLogin, openLogin } from './login.js';
 
 let S;                                   // family state (IndexedDB)
 const V = { room: null, tab: 'money', cashOpen: { in: true }, month: null, modal: null, cloud: null, waiting: false };
@@ -495,7 +495,7 @@ function modalView() {
         <label class="field">🔑<input id="${f ? 'lpass' : 'fpass'}" placeholder="رمز — مثلاً abcd-2345" autocomplete="current-password" autocapitalize="none" spellcheck="false" dir="ltr"></label>
         ${M.err ? `<p class="out-c" style="text-align:center;font-weight:700">❗ ${esc(M.err)}</p>` : ''}
         <button class="save" data-a="${f ? 'loginGo' : 'pinForgotGo'}" ${M.busy ? 'disabled' : ''}>${M.busy ? '⏳' : '✅ ' + (f ? 'ورود' : 'رمز نو بسازم')}</button>
-        ${f ? '' : '<p class="lbl" style="text-align:center">نام کاربری ندارید؟ از مدیر بخواهید: اعضای فامیل ← 🔒↩️ رمز نو</p>'}
+        ${f ? '<p class="lbl" style="text-align:center">نام کاربری و رمز را مدیر می‌سازد: 🗝️ ← اعضای فامیل ← 🔑 — رمز، PIN نیست</p>' : '<p class="lbl" style="text-align:center">نام کاربری ندارید؟ از مدیر بخواهید: اعضای فامیل ← 🔒↩️ رمز نو</p>'}
         ${f ? `<button class="save" style="background:var(--in)" data-a="pasteInvite">📋 لینک دعوت دارم — بچسبانم</button>
           ${M.back ? '<button class="save" style="background:#555" data-a="loginBack">↩️ پس</button>' : ''}` : ''}`);
     }
@@ -513,7 +513,10 @@ function modalView() {
       return sheet(`🔑 ${face(m, 'f40')}`, `
         ${m?.loginUser ? `<p class="lbl" style="text-align:center">ورود فعلی: <b dir="auto">${esc(m.loginUser)}</b> — رمز نو، رمز کهنه را باطل می‌کند</p>` : ''}
         <label class="field">👤<input id="muser" placeholder="نام کاربری — مثلاً ali" value="${esc(M.user || '')}" autocapitalize="none" spellcheck="false" dir="auto"></label>
-        <button class="save" data-a="mloginMake" ${M.busy ? 'disabled' : ''}>${M.busy ? '⏳' : '🔑 ساختن رمز ورود'}</button>
+        <label class="field">🔑<input id="mpass" placeholder="رمز — حداقل ۶ حرف یا عدد" value="${esc(M.pass0 || '')}" autocapitalize="none" spellcheck="false" dir="ltr"></label>
+        <p class="lbl" style="text-align:center">رمز را خودتان بنویسید یا همین را نگه دارید — حداقل ۶ حرف یا عدد (انگلیسی). این PIN نیست.</p>
+        ${M.err ? `<p class="out-c" style="text-align:center;font-weight:700">❗ ${esc(M.err)}</p>` : ''}
+        <button class="save" data-a="mloginMake" ${M.busy ? 'disabled' : ''}>${M.busy ? '⏳' : '🔑 ساختن ورود'}</button>
         ${SY ? '' : '<p class="out-c" style="text-align:center">☁️❗ برای ساختن ورود انترنت لازم است</p>'}`);
     }
     case 'who':
@@ -1009,17 +1012,19 @@ const A = {
   loginBack: () => { V.modal = V.modal.back || null; render(); },
   memberLogin: (v) => requireAdmin(() => {
     const m = member(v);
-    V.modal = { kind: 'mlogin', memberId: v, user: m.loginUser || (/^[a-z0-9 ._-]+$/i.test(m.name || '') ? normUser(m.name) : '') };
+    V.modal = { kind: 'mlogin', memberId: v, user: m.loginUser || (/^[a-z0-9 ._-]+$/i.test(m.name || '') ? normUser(m.name) : ''), pass0: newPassword() };
     render();
   }),
   mloginMake: async () => {
     const M = V.modal, m = member(M.memberId);
     const user = normUser(document.getElementById('muser')?.value);
-    if (!user) { toast('👤❓'); return; }
-    if (!SY) { toast('☁️❗'); return; }
-    M.busy = true; M.user = user; render();
+    const pass = (document.getElementById('mpass')?.value || '').trim();
+    M.user = user; M.pass0 = pass;
+    if (!user) { M.err = 'نام کاربری بنویسید'; render(); return; }
+    if (normPass(pass).length < 6) { M.err = 'رمز کوتاه است — حداقل ۶ حرف یا عدد انگلیسی'; render(); return; }
+    if (!SY) { M.err = 'انترنت لازم است'; render(); return; }
+    M.busy = true; M.err = null; render();
     try {
-      const pass = newPassword();
       const { id, code, doc } = await sealLogin(user, pass, { fid: SY.familyId, code: SY.joinCode, memberId: m.id });
       await SY.saveLogin(id, code, doc);
       if (m.loginId && m.loginId !== id) SY.deleteLogin(m.loginId).catch(() => {});   // old password stops working
@@ -1028,7 +1033,7 @@ const A = {
       render();
     } catch (e) {
       console.error(e);
-      M.busy = false; render(); toast('☁️❗');
+      Object.assign(M, { busy: false, err: `ساخته نشد — ${navigator.onLine ? e?.code || e?.message || 'error' : 'انترنت نیست'}` }); render();
     }
   },
   mloginWa: () => { const M = V.modal; sendWhatsApp(`🏠 حساب خانواده\n\n🔗 ${siteLink()}\n👤 نام کاربری: ${M.user}\n🔑 رمز: ${M.pass}\n\nلینک را باز کنید ← 🔑 ورود`); },
