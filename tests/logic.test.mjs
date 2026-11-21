@@ -391,7 +391,7 @@ test('bottom bar: front places for everyone, one admin door last (admin only)', 
 });
 
 // ---------- loan book + month carry-over ----------
-import { loanFlows, monthCash, loanLedger, ledgerText } from '../logic.js';
+import { loanFlows, monthCash, loanLedger, loanStatement, ledgerText } from '../logic.js';
 
 const AQRAB = d('2026-11-13'), MIZAN = d('2026-10-10'), QAWS = d('2026-12-10');
 const LOANS = [
@@ -428,13 +428,19 @@ test('monthCash: leftover carries to next month, overspending carries as minus, 
   assert.equal(monthCash(txns, LOANS, 'USD', monthKey(AQRAB)).opening, 50);
 });
 
-test('loanLedger: per person dated rows, got/gave totals and what is still open', () => {
+test('loanStatement: total, each dated payment with balance after it, paid and left', () => {
+  const st = loanStatement(LOANS, 'L1');
+  assert.deepEqual([st.total, st.paid, st.left, st.for], [10000, 5000, 5000, 'house']);
+  assert.deepEqual(st.pays.map((x) => [x.amount, x.note, x.leftAfter]), [[3000, 'نقد', 7000], [2000, null, 5000]]);
+  assert.equal(loanStatement(LOANS, 'L4'), null);   // deleted
+  assert.equal(loanStatement(LOANS, 'L2').left, 0);
+});
+
+test('loanLedger: per person statements, got/gave totals and what is still open', () => {
   const L = loanLedger(LOANS, 'AFN');
   assert.deepEqual(L.total, { got: 14000, gave: 9000, weOwe: 5000, theyOwe: 0 });
   const c1 = L.people.find((p) => p.who === 'c1');
-  assert.deepEqual(c1.rows.map((r) => [r.kind, r.amount, r.for, r.note]),
-    [['borrowed', 10000, 'house', 'سقف'], ['payOut', 3000, 'house', 'نقد'], ['payOut', 2000, 'house', null]]);
-  assert.equal(c1.rows[1].loanNote, 'سقف');
+  assert.deepEqual(c1.loans.map((st) => [st.loan.id, st.total, st.paid, st.left]), [['L1', 10000, 5000, 5000]]);
   assert.deepEqual([c1.got, c1.gave, c1.weOwe, c1.theyOwe], [10000, 5000, 5000, 0]);
   const c2 = L.people.find((p) => p.who === 'c2');
   assert.deepEqual([c2.got, c2.gave, c2.theyOwe], [4000, 4000, 0]);
@@ -443,13 +449,13 @@ test('loanLedger: per person dated rows, got/gave totals and what is still open'
   assert.equal(loanLedger(LOANS, 'USD').total.theyOwe, 500);
 });
 
-test('ledgerText: WhatsApp text lists every dated row and what is open', () => {
+test('ledgerText: WhatsApp text: each loan, its dated payments with balance after, and totals', () => {
   const t = ledgerText(loanLedger(LOANS, 'AFN'), 'AFN', {
     name: (id) => ({ c1: 'کاکا', c2: 'همسایه' }[id]), forName: (id) => ({ house: ['🏠', 'خانه'], wedding: ['💍', 'عروسی'] }[id]), date: () => 'روز' });
   assert.match(t, /👤 کاکا/);
-  assert.match(t, /📥 قرض گرفتیم .*🏠 خانه · سقف/);
-  assert.match(t, /💵 ما پس دادیم .* · نقد/);
-  assert.match(t, /⬅️ بالای ما: ۵٬۰۰۰|⬅️ بالای ما: ۵,۰۰۰|⬅️ بالای ما:/);
+  assert.match(t, /📥 قرض گرفتیم · روز · 🏠 خانه · سقف/);
+  assert.match(t, /💵 روز · پس دادیم .* · نقد → باقی /);
+  assert.match(t, /پس دادیم: .* · باقی: /);
   assert.match(t, /👤 همسایه[\s\S]*✅ حساب صاف/);
 });
 

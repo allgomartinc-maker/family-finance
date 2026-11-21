@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, LOAN_FOR, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS
 import {
   monthKey, shiftMonth, monthLabel, totals, faDigits, money,
   roleOf, canTab, cashBalances, visibleTxns, loansView, jarTotals, abroadSummary,
-  monthCompare, jarsMonthNet, monthCash, loanLedger, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
+  monthCompare, jarsMonthNet, monthCash, loanLedger, loanStatement, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -58,10 +58,10 @@ const forOf = (id) => LOAN_FOR.find((f) => f.id === id) || LOAN_FOR[LOAN_FOR.len
 const todayISO = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 const pickTs = (iso) => { if (!iso || iso >= todayISO()) return Date.now(); const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d, 12).getTime(); };
 const backdated = (M) => M.date && M.date < todayISO();
-const loanExtras = (M) => `<div class="row" style="margin-top:12px;justify-content:center;gap:14px">
+const loanExtras = (M, ph = 'یادداشت — برای چه؟ (اختیاری)') => `<div class="row" style="margin-top:12px;justify-content:center;gap:14px">
     <button class="iconbtn" data-a="lNote">${L(M.note ? '✅' : '📝', 'یادداشت')}</button>
     <button class="iconbtn" data-a="lDate">${L(backdated(M) ? '✅' : '📅', backdated(M) ? dateLabel(pickTs(M.date)) : 'امروز')}</button></div>
-  ${M.noteOpen || M.note ? `<label class="notebox">📝<input id="lnote" maxlength="120" placeholder="یادداشت — برای چه؟ (اختیاری)" value="${esc(M.note)}" autocomplete="off"></label>` : ''}
+  ${M.noteOpen || M.note ? `<label class="notebox">📝<input id="lnote" maxlength="120" placeholder="${ph}" value="${esc(M.note)}" autocomplete="off"></label>` : ''}
   ${M.dateOpen ? `<label class="notebox">📅<input id="ldate" type="date" max="${todayISO()}" value="${esc(M.date || todayISO())}"></label>` : ''}`;
 const readLoanExtras = (M) => {
   M.note = (document.getElementById('lnote')?.value ?? M.note ?? '').trim().slice(0, 120);
@@ -221,11 +221,27 @@ function loansViewUI() {
   <section class="list">${v.loans.length ? [...v.loans.filter((l) => !l.done), ...v.loans.filter((l) => l.done)].map(row).join('') : '<div class="empty">🤝</div>'}</section>`;
 }
 
+// One loan, plainly: who / for what / when, then total · paid · left, then every payment (date, amount, note, left after).
+function statementCard(st, person = true) {
+  const l = st.loan, lent = l.dir === 'lent', f = forOf(st.for), cur = l.currency;
+  const paidWord = lent ? 'پس آورد' : 'پس دادیم';
+  return `<div class="stmt">
+    <div class="stmt-head">${lent ? '📤 قرض دادیم' : '📥 قرض گرفتیم'}${person ? ` ${lent ? 'به' : 'از'} ${who(l.who)}` : ''}</div>
+    <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · 📅 ${dateLabel(l.ts)}</div>
+    ${l.note ? `<div class="note">📝 ${esc(l.note)}</div>` : ''}
+    <div class="stmt-sum">
+      <div><span class="lab">کل قرض</span><b>${money(st.total, cur)}</b></div>
+      <div><span class="lab">${paidWord}</span><b>${money(st.paid, cur)}</b></div>
+      <div class="${st.left ? (lent ? 'in-c' : 'out-c') : 'in-c'}"><span class="lab">باقی</span><b>${st.left ? money(st.left, cur) : '✅ صاف'}</b></div>
+    </div>
+    ${st.pays.length ? `<div class="stmt-pays">${st.pays.map((x) => `<div class="stmt-pay">
+      <span>📅 ${dateLabel(x.ts)} · ${paidWord}</span><b>💵 ${money(x.amount, cur)}</b>
+      ${x.note ? `<span class="note">📝 ${esc(x.note)}</span>` : ''}
+      <span class="left">بعد از این، باقی: ${money(x.leftAfter, cur)}</span></div>`).join('')}</div>` : ''}
+  </div>`;
+}
+
 // Every amount we got from / gave to each person, with dates, and what is still open (admin).
-const LEDGER_KIND = {
-  borrowed: ['📥', 'قرض گرفتیم', 'in-c'], lent: ['📤', 'قرض دادیم', 'out-c'],
-  payOut: ['💵', 'ما پس دادیم', 'out-c'], payIn: ['💵', 'پس آورد', 'in-c'],
-};
 function loanBookView() {
   const L0 = loanLedger(S.loans, S.currency);
   const person = (p) => `<div class="card">
@@ -233,10 +249,7 @@ function loanBookView() {
     <div class="sum" style="margin-top:8px">
       <div class="in-c">⬇️ ${money(p.got, S.currency)}<span class="lab">از او گرفتیم</span></div>
       <div class="out-c">⬆️ ${money(p.gave, S.currency)}<span class="lab">به او دادیم</span></div></div>
-    <div class="list" style="margin-top:10px">${p.rows.map((r) => { const [ic, word, col] = LEDGER_KIND[r.kind]; const f = forOf(r.for);
-      return `<div class="tx"><span class="cat">${ic}</span><span class="grow" style="text-align:start">
-        <span class="amt ${col}">${money(r.amount, S.currency)}</span> <span class="lbl">${word}</span><br>
-        <span class="lbl">${dateLabel(r.ts)} · ${f.icon} ${f.name}</span>${r.note ? `<br><span class="note">📝 ${esc(r.note)}</span>` : ''}</span></div>`; }).join('')}</div>
+    <div style="margin-top:10px">${p.loans.map((st) => statementCard(st, false)).join('')}</div>
     <div class="row" style="margin-top:10px;font-size:20px;font-weight:700">
       ${p.theyOwe ? `<span class="in-c">➡️ بالای او: ${money(p.theyOwe, S.currency)}</span>` : ''}
       ${p.weOwe ? `<span class="out-c">⬅️ بالای ما: ${money(p.weOwe, S.currency)}</span>` : ''}
@@ -448,25 +461,31 @@ function modalView() {
         <button class="save" data-a="loanSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     }
     case 'loan': {
-      const l = loansView(S.loans, (S.loans.find((r) => r.id === M.id) || {}).currency || S.currency).loans.find((r) => r.id === M.id);
-      if (!l) return '';
-      const pays = S.loans.filter((r) => r.kind === 'pay' && r.loanId === l.id && !r.deleted).sort((a, b) => b.ts - a.ts);
-      const canEdit = isAdmin() || l.by === S.me;
-      return sheet(`${l.dir === 'lent' ? '📤' : '📥'} ${face(contact(l.who), 'f40')}`, `
-        <div class="display ${l.dir === 'lent' ? 'in-c' : 'out-c'}">${l.done ? '✅' : money(l.left, l.currency)}</div>
-        <div class="lbl" style="text-align:center;margin-top:6px">${l.dir === 'lent' ? '📤 قرض دادیم' : '📥 قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dateLabel(l.ts)}</div>
-        <div class="lbl" style="text-align:center;margin-top:4px;font-size:20px">${forOf(l.for).icon} ${forOf(l.for).name}</div>
-        ${l.note ? `<div class="card notecard">📝 ${esc(l.note)}</div>` : ''}
-        ${pays.length ? `<div class="lbl" style="margin-top:10px">💵 ${l.dir === 'lent' ? 'پس آورد' : 'ما پس دادیم'}: ${money(l.paid, l.currency)}</div>` : ''}
-        <div class="list" style="margin-top:6px">${pays.map((p) => `<div class="tx"><span class="cat">💵</span>
-          <span class="grow" style="text-align:start"><span class="amt">${money(p.amount, l.currency)}</span><br><span class="lbl">${dateLabel(p.ts)}</span>${p.note ? `<br><span class="note">📝 ${esc(p.note)}</span>` : ''}</span>${face(member(p.by), 'f24')}</div>`).join('')}</div>
-        ${canEdit && !l.done ? '<button class="save" data-a="loanPayStart">💵 پرداخت قرض</button>' : ''}
+      const st = loanStatement(S.loans, M.id);
+      if (!st) return '';
+      const l = st.loan, canEdit = isAdmin() || l.by === S.me;
+      return sheet(`${l.dir === 'lent' ? '📤' : '📥'} ${face(contact(l.who), 'f40')}`, `${statementCard(st)}
+        ${canEdit && st.left ? `<button class="save" data-a="loanPayStart">💵 ${l.dir === 'lent' ? 'پس آورد' : 'پس دادن قرض'}</button>` : ''}
         ${canEdit ? '<button class="save danger" data-a="loanDel">🗑️ پاک کردن</button>' : ''}`);
     }
-    case 'loanPay':
-      return sheet('💵', `${keypad(M.amount, M.currency)}
-        ${loanExtras(M)}
-        <button class="save" data-a="loanPaySave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
+    case 'loanPay': {
+      const st = loanStatement(S.loans, M.id);
+      if (!st) return '';
+      const l = st.loan, lent = l.dir === 'lent', f = forOf(st.for);
+      const after = st.left - (+M.amount || 0);
+      return sheet('💵', `<div class="stmt">
+          <div class="stmt-head">💵 ${lent ? `${who(l.who)} پس می‌آورد` : `پس دادن به ${who(l.who)}`}</div>
+          <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · قرض ${dateLabel(l.ts)}</div>
+          ${l.note ? `<div class="note">📝 ${esc(l.note)}</div>` : ''}
+          <div class="stmt-sum">
+            <div><span class="lab">کل قرض</span><b>${money(st.total, l.currency)}</b></div>
+            <div><span class="lab">${lent ? 'پس آورد' : 'پس دادیم'} تا حال</span><b>${money(st.paid, l.currency)}</b></div>
+            <div class="${lent ? 'in-c' : 'out-c'}"><span class="lab">باقی</span><b>${money(st.left, l.currency)}</b></div></div></div>
+        ${keypad(M.amount, l.currency)}
+        <div class="after">${after >= 0 ? `بعد از این، باقی: <b class="${after ? '' : 'in-c'}">${after ? money(after, l.currency) : '✅ صاف'}</b>` : '<b class="out-c">❗ بیشتر از باقی است</b>'}</div>
+        ${loanExtras(M, 'برای چه؟ مثلاً قسط اول، نقد، حواله')}
+        <button class="save" data-a="loanPaySave" ${+M.amount > 0 && after >= 0 ? '' : 'disabled'}>✅ ثبت</button>`);
+    }
     case 'jarNew':
       if (!M.goal) {
         return sheet('➕🫙', `<div class="grid">${GOALS.map((g) =>
@@ -926,7 +945,7 @@ const A = {
   loanOpen: (v) => { V.modal = { kind: 'loan', id: v }; render(); },
   loanPayStart: () => {
     const l = S.loans.find((r) => r.id === V.modal.id);
-    V.modal = { kind: 'loanPay', id: l.id, amount: '', currency: l.currency };
+    V.modal = { kind: 'loanPay', id: l.id, amount: '', currency: l.currency, noteOpen: true };
     render();
   },
   loanPaySave: () => commit(() => {

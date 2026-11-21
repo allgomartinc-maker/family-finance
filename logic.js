@@ -172,40 +172,50 @@ export function monthCash(txns, loans, currency, month) {
   return r;
 }
 
-// Per person, oldest first: every amount we got from them and gave to them, and what is still open.
-// rows: { ts, kind: 'borrowed'|'lent'|'payOut' (we paid back)|'payIn' (they paid us), amount, for, note, loanNote }
+// One loan as a statement: total, every payment (oldest first) with the balance left after it, paid, left.
+export function loanStatement(records, loanId) {
+  const loan = records.find((r) => r.id === loanId && r.kind === 'loan' && !r.deleted);
+  if (!loan) return null;
+  let left = loan.amount;
+  const pays = records.filter((r) => r.kind === 'pay' && r.loanId === loanId && !r.deleted).sort((a, b) => a.ts - b.ts)
+    .map((r) => { left -= r.amount; return { id: r.id, ts: r.ts, amount: r.amount, note: r.note || null, by: r.by, leftAfter: Math.max(0, left) }; });
+  const paid = loan.amount - left;
+  return { loan, for: loan.for || 'other', total: loan.amount, paid, left: Math.max(0, left), pays };
+}
+
+// Per person: each loan as a statement (oldest first), how much we got from / gave to them,
+// and what is still open in each direction. Biggest open balance first.
 export function loanLedger(records, currency) {
-  const paid = {};
-  for (const r of records) if (r.kind === 'pay' && !r.deleted) paid[r.loanId] = (paid[r.loanId] || 0) + r.amount;
   const P = {};
   const total = { got: 0, gave: 0, weOwe: 0, theyOwe: 0 };
-  for (const f of loanFlows(records, currency)) {
-    const l = f.loan;
-    const p = (P[l.who] ||= { who: l.who, rows: [], got: 0, gave: 0, weOwe: 0, theyOwe: 0 });
-    const kind = f.pay ? (l.dir === 'borrowed' ? 'payOut' : 'payIn') : l.dir;
-    p.rows.push({ ts: f.ts, kind, amount: f.amount, for: l.for || 'other', note: (f.pay ? f.pay.note : l.note) || null, loanNote: f.pay ? l.note || null : null });
-    p[f.dir === 'in' ? 'got' : 'gave'] += f.amount;
-    total[f.dir === 'in' ? 'got' : 'gave'] += f.amount;
-    if (!f.pay) {
-      const left = Math.max(0, l.amount - (paid[l.id] || 0));
-      p[l.dir === 'borrowed' ? 'weOwe' : 'theyOwe'] += left;
-      total[l.dir === 'borrowed' ? 'weOwe' : 'theyOwe'] += left;
-    }
+  const loans = records.filter((r) => r.kind === 'loan' && !r.deleted && r.currency === currency).sort((a, b) => a.ts - b.ts);
+  for (const l of loans) {
+    const st = loanStatement(records, l.id);
+    const p = (P[l.who] ||= { who: l.who, loans: [], got: 0, gave: 0, weOwe: 0, theyOwe: 0, last: 0 });
+    p.loans.push(st);
+    const borrowed = l.dir === 'borrowed';
+    const got = borrowed ? st.total : st.paid, gave = borrowed ? st.paid : st.total;
+    p.got += got; p.gave += gave; total.got += got; total.gave += gave;
+    p[borrowed ? 'weOwe' : 'theyOwe'] += st.left; total[borrowed ? 'weOwe' : 'theyOwe'] += st.left;
+    p.last = Math.max(p.last, l.ts, ...st.pays.map((x) => x.ts));
   }
-  const people = Object.values(P).sort((a, b) => (b.weOwe + b.theyOwe) - (a.weOwe + a.theyOwe) || b.rows.at(-1).ts - a.rows.at(-1).ts);
+  const people = Object.values(P).sort((a, b) => (b.weOwe + b.theyOwe) - (a.weOwe + a.theyOwe) || b.last - a.last);
   return { people, total };
 }
 
-const LEDGER_WORD = { borrowed: '📥 قرض گرفتیم', lent: '📤 قرض دادیم', payOut: '💵 ما پس دادیم', payIn: '💵 پس آورد' };
 // name(id) → person's name · forName(id) → [icon, name] · date(ts) → date text
 export function ledgerText(ledger, currency, { name, forName, date }) {
   const m = (n) => money(n, currency);
   const out = ['🤝 دفتر قرض', '', `📤 بالای مردم: ${m(ledger.total.theyOwe)}`, `📥 بالای ما: ${m(ledger.total.weOwe)}`];
   for (const p of ledger.people) {
     out.push('', `👤 ${name(p.who)}`);
-    for (const r of p.rows) {
-      const [ic, nm] = forName(r.for);
-      out.push(`${date(r.ts)} · ${LEDGER_WORD[r.kind]} ${m(r.amount)} · ${ic} ${nm}${r.note ? ` · ${r.note}` : ''}`);
+    for (const st of p.loans) {
+      const [ic, nm] = forName(st.for);
+      const lent = st.loan.dir === 'lent';
+      out.push(`${lent ? '📤 قرض دادیم' : '📥 قرض گرفتیم'} · ${date(st.loan.ts)} · ${ic} ${nm}${st.loan.note ? ` · ${st.loan.note}` : ''}`);
+      out.push(`   کل: ${m(st.total)}`);
+      for (const x of st.pays) out.push(`   💵 ${date(x.ts)} · ${lent ? 'پس آورد' : 'پس دادیم'} ${m(x.amount)}${x.note ? ` · ${x.note}` : ''} → باقی ${m(x.leftAfter)}`);
+      out.push(`   ${lent ? 'پس آورد' : 'پس دادیم'}: ${m(st.paid)} · ${st.left ? `باقی: ${m(st.left)}` : '✅ صاف'}`);
     }
     if (p.theyOwe) out.push(`➡️ بالای او: ${m(p.theyOwe)}`);
     if (p.weOwe) out.push(`⬅️ بالای ما: ${m(p.weOwe)}`);
