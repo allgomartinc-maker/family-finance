@@ -76,17 +76,18 @@ export const CUR_NAME = { AFN: 'افغانی', USD: 'دالر' };
 export const money = (n, cur) => `${nf.format(n)} ${CUR_NAME[cur] || CUR_NAME.AFN}`;
 
 // ---------- roles ----------
-// admin (manager): everything (PIN) · viewer: sees everything, changes nothing ·
-// earner: adds and changes only their own money and loans. Old roles (member, helper, orderer) → earner.
-export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : m?.role === 'viewer' ? 'viewer' : 'earner');
-const TABS = { admin: ['money', 'loans', 'admin'], earner: ['money', 'loans'], viewer: ['money', 'loans', 'report'] };
+// Two kinds of people: admin (manager) does everything (PIN) · everyone else is a viewer:
+// sees all the family's money, loans and reports, but adds, changes and deletes nothing.
+// Old roles (earner, member, helper, orderer) are read as viewer.
+export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : 'viewer');
+const TABS = { admin: ['money', 'loans', 'admin'], viewer: ['money', 'loans', 'report'] };
 export const canBuy = () => true;
-export const canWrite = (role) => role !== 'viewer';
-// Role button in the family list: manager → viewer → earner → manager.
-export const nextRole = (role) => ({ admin: 'viewer', viewer: 'earner', earner: 'admin' }[role] || 'viewer');
-export const canTab = (role, tab) => (TABS[role] || TABS.earner).includes(tab);
+export const canWrite = (role) => role === 'admin';
+// Role button in the family list: manager ↔ viewer.
+export const nextRole = (role) => (role === 'admin' ? 'viewer' : 'admin');
+export const canTab = (role, tab) => (TABS[role] || TABS.viewer).includes(tab);
 // Bottom bar order: front places first, the admin door (🗝️) always last.
-export const navTabs = (role) => [...(TABS[role] || TABS.earner)];
+export const navTabs = (role) => [...(TABS[role] || TABS.viewer)];
 export const visibleTxns = (txns, role, me) => (role === 'admin' || role === 'viewer' ? txns : txns.filter((x) => x.by === me));
 
 // ---------- cash in hand (خرچی) ----------

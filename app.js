@@ -44,8 +44,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 const me = () => S.members.find((m) => m.id === S.me);
 const isAdmin = () => me()?.role === 'admin';
 const role = () => roleOf(me());
-const ROLE_ICON = { admin: '👑', earner: '💰', viewer: '👁️' };
-const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور', viewer: 'بیننده' };
+const ROLE_ICON = { admin: '👑', viewer: '👁️' };
+const ROLE_NAME = { admin: 'مدیر', viewer: 'بیننده' };
 const writer = () => canWrite(role());        // viewer: sees everything, changes nothing
 const seesAll = () => isAdmin() || role() === 'viewer';
 const viewOnly = () => (writer() ? '' : '<div class="viewonly">👁️ <b>فقط دیدن</b> — شما بیننده هستید؛ تغییر را مدیر می‌کند</div>');
@@ -137,7 +137,7 @@ function top() {
   const title = TAB_ICON[V.tab];
   return `<header class="top">
     <button class="mebtn" data-a="who">${face(me(), 'f56')}<span class="lab">${esc(me()?.name) || 'من'}</span></button>
-    <button class="iconbtn" data-a="pocket">${L('👛', 'جیب من')}</button>
+    ${writer() ? `<button class="iconbtn" data-a="pocket">${L('👛', 'جیب من')}</button>` : ''}
     <h1>${title}<span class="lab">${TAB_NAME[V.tab]}</span></h1>
     ${V.cloud ? `<span class="cloud">${{ ok: L('☁️✅', 'وصل'), pending: L('☁️⏳', 'در انتظار'), offline: L('📴', 'بی‌انترنت'), error: L('☁️❗', 'مشکل') }[V.cloud]}</span>` : ''}
   </header>`;
@@ -482,7 +482,6 @@ function modalView() {
         <p><input class="name" id="mname" placeholder="نام (اختیاری)" value="${esc(M.name)}"></p>
         ${first || M.self ? '' : `<div class="seg">
           <button data-a="mrole" data-v="viewer" class="${M.role === 'viewer' ? 'on' : ''}">👁️<small>بیننده</small></button>
-          <button data-a="mrole" data-v="earner" class="${M.role === 'earner' ? 'on' : ''}">💰<small>نان‌آور</small></button>
           <button data-a="mrole" data-v="admin" class="${M.role === 'admin' ? 'on' : ''}">👑<small>مدیر</small></button></div>`}
         <button class="save" data-a="msave" ${M.emoji || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
     }
@@ -534,7 +533,7 @@ function modalView() {
       return sheet('👤❓', `<div class="grid">${S.members.filter((m) => !m.deleted).map((m) => `
         <button class="tile ${m.id === S.me ? 'sel' : ''}" data-a="iam" data-v="${m.id}">
           <span class="badge">${ROLE_ICON[roleOf(m)]}</span>${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}
-        <button class="tile add" data-a="newSelf"><span class="pic">➕</span><small>من نو هستم</small></button></div>
+        ${me() && !writer() ? '' : '<button class="tile add" data-a="newSelf"><span class="pic">➕</span><small>من نو هستم</small></button>'}</div>
         ${CLOUD ? `<button class="save" style="background:var(--in)" data-a="pasteInvite">📋 لینک دعوت دارم — بچسبانم</button>
           <button class="save" style="background:var(--sel)" data-a="loginStart">🔑 ورود با نام کاربری و رمز</button>` : ''}`);
     case 'people':
@@ -1378,11 +1377,13 @@ document.addEventListener('change', (e) => {
 // Anything that adds, changes or deletes family money is closed to viewers (buttons are hidden too).
 const WRITES = new Set(['addTx', 'txSave', 'txEdit', 'txDel', 'txDelAsk', 'txDelYes', 'txRestore', 'give', 'giveTo', 'giveSave',
   'returnStart', 'returnSave', 'loanNew', 'loanSave', 'loanPayStart', 'loanPaySave', 'loanDel', 'loanForEdit', 'loanForSet',
-  'payEdit', 'payDel', 'payDelYes', 'jarNew', 'jarSave', 'jarMoveStart', 'jarMoveSave', 'jarDel', 'catNew', 'catSave', 'csave']);
+  'payEdit', 'payDel', 'payDelYes', 'jarNew', 'jarSave', 'jarMoveStart', 'jarMoveSave', 'jarDel', 'catNew', 'catSave', 'csave',
+  'pocket', 'pocketAdd', 'pocketSave', 'pocketDel', 'roleCycle', 'rmMember', 'newMember', 'memberLogin', 'memberPin']);
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-a]');
   if (!el) return;
-  if (WRITES.has(el.dataset.a) && S?.members?.length && !writer()) { toast('👁️ فقط دیدن'); return; }
+  const blocked = WRITES.has(el.dataset.a) || (el.dataset.a === 'newSelf' && me());   // a viewer can't add people either
+  if (blocked && S?.members?.length && !writer()) { toast('👁️ فقط دیدن'); return; }
   A[el.dataset.a]?.(el.dataset.v, el, e);
 });
 

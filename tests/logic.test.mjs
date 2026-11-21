@@ -101,18 +101,17 @@ test('money shows the currency as a Dari word: افغانی / دالر', () => {
 // ---------- Phase 1 ----------
 import { roleOf, canTab, cashBalances, lastPrice, linesTotal, visibleTxns } from '../logic.js';
 
-test('roles: only admin and earner; everything else counts as earner', () => {
+test('roles: admin, and everyone else is a viewer (old earner/member/helper/orderer too)', () => {
   assert.equal(roleOf({ role: 'admin' }), 'admin');
-  for (const r of ['member', 'earner', 'helper', 'orderer', 'xyz']) assert.equal(roleOf({ role: r }), 'earner');
-  assert.equal(roleOf({}), 'earner');
-  assert.equal(roleOf(undefined), 'earner');
+  for (const r of ['viewer', 'member', 'earner', 'helper', 'orderer', 'xyz']) assert.equal(roleOf({ role: r }), 'viewer');
+  assert.equal(roleOf({}), 'viewer');
+  assert.equal(roleOf(undefined), 'viewer');
 });
 
-test('earner: money and loans; admin also the admin door; no grocery or bills tab', () => {
-  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'admin'].filter((t) => canTab('earner', t)), ['money', 'loans']);
-  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'admin'].filter((t) => canTab('admin', t)), ['money', 'loans', 'admin']);
-  assert.equal(canTab('earner', 'admin'), false);
-  assert.equal(canTab('helper', 'grocery'), false);
+test('tabs: viewer money, loans, report; admin money, loans, admin door; no grocery or bills', () => {
+  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'report', 'admin'].filter((t) => canTab('viewer', t)), ['money', 'loans', 'report']);
+  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'report', 'admin'].filter((t) => canTab('admin', t)), ['money', 'loans', 'admin']);
+  assert.equal(canTab('helper', 'admin'), false);
 });
 
 test('cash in hand = given − returned − spent from hand (per currency, ignores deleted)', () => {
@@ -147,19 +146,18 @@ test('linesTotal sums recorded prices', () => {
   assert.equal(linesTotal([{ price: 3200 }, { price: 800 }, {}]), 4000);
 });
 
-test('visibleTxns: admin all, others only their own', () => {
+test('visibleTxns: admin and viewers see the whole family', () => {
   const t = [{ id: 1, by: 'a' }, { id: 2, by: 'b' }];
   assert.deepEqual(visibleTxns(t, 'admin', 'a').map((x) => x.id), [1, 2]);
-  assert.deepEqual(visibleTxns(t, 'earner', 'a').map((x) => x.id), [1]);
-  assert.deepEqual(visibleTxns(t, 'helper', 'b').map((x) => x.id), [2]);
+  assert.deepEqual(visibleTxns(t, 'viewer', 'z').map((x) => x.id), [1, 2]);
 });
 
 // ---------- Phase 2 ----------
 import { loansView, jarTotals, abroadSummary } from '../logic.js';
 
-test('loans tab: admin and earner', () => {
+test('loans tab: admin and viewer', () => {
   assert.equal(canTab('admin', 'loans'), true);
-  assert.equal(canTab('earner', 'loans'), true);
+  assert.equal(canTab('viewer', 'loans'), true);
 });
 
 test('loansView: remaining per loan, open totals per direction and currency', () => {
@@ -307,11 +305,9 @@ test('everyone can buy', () => {
   for (const r of ['admin', 'earner', 'helper', 'orderer']) assert.equal(canBuy(r), true);
 });
 
-test('role button: manager → viewer → earner → manager', () => {
+test('role button: manager ↔ viewer', () => {
   assert.equal(nextRole('admin'), 'viewer');
-  assert.equal(nextRole('viewer'), 'earner');
-  assert.equal(nextRole('earner'), 'admin');
-  assert.equal(nextRole('helper'), 'viewer');
+  assert.equal(nextRole('viewer'), 'admin');
 });
 
 // ---------- buy everything, then one total ----------
@@ -385,8 +381,8 @@ test('choosing who you are asks the PIN, unless it is already you or no PIN set 
 import { navTabs } from '../logic.js';
 test('bottom bar: front places for everyone, one admin door last (admin only)', () => {
   assert.deepEqual(navTabs('admin'), ['money', 'loans', 'admin']);
-  assert.deepEqual(navTabs('earner'), ['money', 'loans']);
-  assert.deepEqual(navTabs('nobody'), ['money', 'loans']);
+  assert.deepEqual(navTabs('viewer'), ['money', 'loans', 'report']);
+  assert.deepEqual(navTabs('nobody'), ['money', 'loans', 'report']);
   assert.ok(navTabs('admin').length <= 5);
 });
 
@@ -499,8 +495,8 @@ test('viewer: sees money, loans and reports for the whole family, can change not
   assert.deepEqual(navTabs('viewer'), ['money', 'loans', 'report']);
   assert.equal(canTab('viewer', 'admin'), false);
   assert.equal(canWrite('viewer'), false);
-  for (const r of ['admin', 'earner']) assert.equal(canWrite(r), true);
+  assert.equal(canWrite('admin'), true);
+  for (const r of ['earner', 'helper', 'nobody']) assert.equal(canWrite(roleOf({ role: r })), false);
   const tx = [{ by: 'a' }, { by: 'b' }];
   assert.equal(visibleTxns(tx, 'viewer', 'z').length, 2);
-  assert.equal(visibleTxns(tx, 'earner', 'a').length, 1);
 });

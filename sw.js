@@ -1,5 +1,5 @@
 // Offline cache. Bump VERSION on every deploy so phones pick up the new files.
-const VERSION = 'ff-v43';
+const VERSION = 'ff-v44';
 const FB = '13.1.0'; // keep in sync with FB_VERSION in sync.js
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'logic.js', 'store.js', 'data.js',
   'config.js', 'sync.js', 'syncplan.js', 'clean.js', 'pin.js', 'login.js',
