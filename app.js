@@ -12,7 +12,8 @@ import { newPassword, normUser, normPass, loginKeys, sealLogin, openLogin } from
 
 let S;                                   // family state (IndexedDB)
 const V = { room: null, tab: 'money', cashOpen: { in: true }, month: null, modal: null, cloud: null, waiting: false };
-let SY = null;                           // sync handle when Firebase is set up
+let SY = null;
+let updateReady = false;                 // a new app version has taken over → reload when no pop-up is open
 const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
 
@@ -159,7 +160,8 @@ function adminView() {
   if (V.room === 'report') return backBar('مدیر') + reportView();
   if (V.room === 'loanBook') return backBar('مدیر') + loanBookView();
   return `<section><div class="rooms">${ROOMS.filter(([id]) => id !== 'invite' || SY).map(([id, i, n]) =>
-    `<button class="room" data-a="room" data-v="${id}"><span class="pic">${i}</span><b>${n}</b></button>`).join('')}</div></section>`;
+    `<button class="room" data-a="room" data-v="${id}"><span class="pic">${i}</span><b>${n}</b></button>`).join('')}</div>
+    <p class="lbl" style="text-align:center;margin-top:14px" dir="ltr">${esc(V.ver || '')}</p></section>`;
 }
 // Money in hand as one plain sum, line by line: from last month + income − spending − loan payments = in hand.
 function cashCard(c, m) {
@@ -789,6 +791,7 @@ function modalView() {
 
 let shownKind = null; // pop-up kind on screen right now
 function render() {
+  if (updateReady && !V.modal) { location.reload(); return; }
   if (!S.members.length && !V.modal && !V.waiting) V.modal = { kind: CLOUD && !hasFamily() ? 'welcome' : 'setup' };
   if (S.members.length && !member(S.me) && !V.modal && !V.waiting) V.modal = { kind: 'who' };
   if (V.waiting && !S.members.length) { $app.innerHTML = '<div class="empty" style="opacity:1">☁️⏳</div>'; return; }
@@ -1374,7 +1377,22 @@ S = await load();
 // Who uses this phone is chosen on this phone only; never guess (could make someone admin).
 S.me = localStorage.getItem('ff-me');
 render();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+// ---------- updates ----------
+// A new version takes over by itself: reload once when it does (never in the middle of a pop-up),
+// and look for a new version each time the app comes back to the screen.
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || updateReady) return;   // first install: nothing old to replace
+    updateReady = true;
+    if (!V.modal) location.reload();
+  });
+}
+// Which version this phone runs (shown on the admin page).
+self.caches?.keys?.().then((k) => { V.ver = k.find((x) => x.startsWith('ff-v')) || ''; }).catch(() => {});
 
 // ---------- cloud sync ----------
 const cfg = emulator ? emulatorConfig : firebaseConfig;
