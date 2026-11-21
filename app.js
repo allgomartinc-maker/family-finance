@@ -50,8 +50,12 @@ const face = (m, size = 'f40') => !m ? `<span class="face ${size}">❔</span>`
 // Built-in categories plus the family's own (S.cats). Own ones come from phones, so always escape.
 const BASE_CATS = { in: IN_CATS, out: OUT_CATS };
 const catOf = (type, id) => { const c = findCat(BASE_CATS, S.cats || [], type, id); return { ...c, icon: esc(c.icon), name: esc(c.name) }; };
-const dayLabel = (ts) => new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long' }).format(ts);
-const dateLabel = (ts) => new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long', year: 'numeric' }).format(ts);
+// Dates show the time too (۳۰ عقرب ساعت ۱۶:۱۶). Loans entered with an older picked date have no real time: date only.
+const FMT_DAY = new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' });
+const FMT_DATE = new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long', year: 'numeric' });
+const FMT_DATE_T = new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const dayLabel = (ts) => FMT_DAY.format(ts);
+const dateLabel = (ts, noTime = false) => (noTime ? FMT_DATE : FMT_DATE_T).format(ts);
 const signed = (n, cur) => `${n < 0 ? '− ' : ''}${money(Math.abs(n), cur)}`;
 const forOf = (id) => LOAN_FOR.find((f) => f.id === id) || LOAN_FOR[LOAN_FOR.length - 1];
 // Loans and payments: 📝 note and 📅 date (today unless an older date is picked, for old debts).
@@ -60,7 +64,7 @@ const pickTs = (iso) => { if (!iso || iso >= todayISO()) return Date.now(); cons
 const backdated = (M) => M.date && M.date < todayISO();
 const loanExtras = (M, ph = 'یادداشت — برای چه؟ (اختیاری)') => `<div class="row" style="margin-top:12px;justify-content:center;gap:14px">
     <button class="iconbtn" data-a="lNote">${L(M.note ? '✅' : '📝', 'یادداشت')}</button>
-    <button class="iconbtn" data-a="lDate">${L(backdated(M) ? '✅' : '📅', backdated(M) ? dateLabel(pickTs(M.date)) : 'امروز')}</button></div>
+    <button class="iconbtn" data-a="lDate">${L(backdated(M) ? '✅' : '📅', backdated(M) ? dateLabel(pickTs(M.date), true) : 'امروز')}</button></div>
   ${M.noteOpen || M.note ? `<label class="notebox">📝<input id="lnote" maxlength="120" placeholder="${ph}" value="${esc(M.note)}" autocomplete="off"></label>` : ''}
   ${M.dateOpen ? `<label class="notebox">📅<input id="ldate" type="date" max="${todayISO()}" value="${esc(M.date || todayISO())}"></label>` : ''}`;
 const readLoanExtras = (M) => {
@@ -203,7 +207,7 @@ function loansViewUI() {
       <span class="cat">${l.dir === 'lent' ? '📤' : '📥'}</span>${face(c, 'f40')}
       <span class="grow" style="text-align:start">
         <span class="amt ${l.dir === 'lent' ? 'in-c' : 'out-c'}">${l.done ? '✅' : money(l.left, l.currency)}</span><br>
-        <span class="lbl">${forOf(l.for).icon} ${forOf(l.for).name} · ${esc(c?.name)} · ${l.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dateLabel(l.ts)}</span>${l.note ? `<br><span class="note">📝 ${esc(l.note)}</span>` : ''}</span>
+        <span class="lbl">${forOf(l.for).icon} ${forOf(l.for).name} · ${esc(c?.name)} · ${l.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dateLabel(l.ts, l.noTime)}</span>${l.note ? `<br><span class="note">📝 ${esc(l.note)}</span>` : ''}</span>
       ${face(member(l.by), 'f24')}</button>`;
   };
   return `<section>
@@ -227,7 +231,7 @@ function statementCard(st, person = true) {
   const paidWord = lent ? 'پس آورد' : 'پس دادیم';
   return `<div class="stmt">
     <div class="stmt-head">${lent ? '📤 قرض دادیم' : '📥 قرض گرفتیم'}${person ? ` ${lent ? 'به' : 'از'} ${who(l.who)}` : ''}</div>
-    <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · 📅 ${dateLabel(l.ts)}</div>
+    <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · 📅 ${dateLabel(l.ts, l.noTime)}</div>
     ${l.note ? `<div class="note">📝 ${esc(l.note)}</div>` : ''}
     <div class="stmt-sum">
       <div><span class="lab">کل قرض</span><b>${money(st.total, cur)}</b></div>
@@ -235,7 +239,7 @@ function statementCard(st, person = true) {
       <div class="${st.left ? (lent ? 'in-c' : 'out-c') : 'in-c'}"><span class="lab">باقی</span><b>${st.left ? money(st.left, cur) : '✅ صاف'}</b></div>
     </div>
     ${st.pays.length ? `<div class="stmt-pays">${st.pays.map((x) => `<div class="stmt-pay">
-      <span>📅 ${dateLabel(x.ts)} · ${paidWord}</span><b>💵 ${money(x.amount, cur)}</b>
+      <span>📅 ${dateLabel(x.ts, x.noTime)} · ${paidWord}</span><b>💵 ${money(x.amount, cur)}</b>
       ${x.note ? `<span class="note">📝 ${esc(x.note)}</span>` : ''}
       <span class="left">بعد از این، باقی: ${money(x.leftAfter, cur)}</span></div>`).join('')}</div>` : ''}
   </div>`;
@@ -475,7 +479,7 @@ function modalView() {
       const after = st.left - (+M.amount || 0);
       return sheet('💵', `<div class="stmt">
           <div class="stmt-head">💵 ${lent ? `${who(l.who)} پس می‌آورد` : `پس دادن به ${who(l.who)}`}</div>
-          <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · قرض ${dateLabel(l.ts)}</div>
+          <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · قرض ${dateLabel(l.ts, l.noTime)}</div>
           ${l.note ? `<div class="note">📝 ${esc(l.note)}</div>` : ''}
           <div class="stmt-sum">
             <div><span class="lab">کل قرض</span><b>${money(st.total, l.currency)}</b></div>
@@ -938,7 +942,7 @@ const A = {
   loanSave: () => commit(() => {
     const M = V.modal;
     readLoanExtras(M);
-    S.loans.push({ id: uid(), kind: 'loan', dir: M.dir, who: M.who, for: M.for || 'other', note: M.note || null, amount: +M.amount, currency: M.currency, by: S.me, ts: pickTs(M.date) });
+    S.loans.push({ id: uid(), kind: 'loan', dir: M.dir, who: M.who, for: M.for || 'other', note: M.note || null, amount: +M.amount, currency: M.currency, by: S.me, ts: pickTs(M.date), ...(backdated(M) ? { noTime: true } : {}) });
     log('loan', M.dir === 'lent' ? '📤' : '📥', `${contact(M.who)?.name || ''} ${money(+M.amount, M.currency)}`);
     V.modal = null;
   }),
@@ -951,7 +955,7 @@ const A = {
   loanPaySave: () => commit(() => {
     const M = V.modal;
     readLoanExtras(M);
-    S.loans.push({ id: uid(), kind: 'pay', loanId: M.id, note: M.note || null, amount: +M.amount, by: S.me, ts: pickTs(M.date) });
+    S.loans.push({ id: uid(), kind: 'pay', loanId: M.id, note: M.note || null, amount: +M.amount, by: S.me, ts: pickTs(M.date), ...(backdated(M) ? { noTime: true } : {}) });
     const l = S.loans.find((r) => r.id === M.id);
     log('loanPay', '💵', `${contact(l?.who)?.name || ''} ${money(+M.amount, M.currency)}`);
     V.modal = { kind: 'loan', id: M.id };

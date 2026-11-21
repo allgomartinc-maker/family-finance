@@ -30,6 +30,7 @@ export function cleanRecord(coll, rec) {
   if (has('voice')) r.voice = safeAudio(r.voice);
   if (has('addedBy')) r.addedBy = Array.isArray(r.addedBy) ? r.addedBy.filter(isId) : [];
   if (has('bought')) r.bought = r.bought === true;
+  if (has('noTime')) r.noTime = r.noTime === true;
   if (has('deleted')) r.deleted = r.deleted === true;
 
   if (coll === 'grocery' && !isId(r.item)) return null;

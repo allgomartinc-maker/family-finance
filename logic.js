@@ -178,7 +178,7 @@ export function loanStatement(records, loanId) {
   if (!loan) return null;
   let left = loan.amount;
   const pays = records.filter((r) => r.kind === 'pay' && r.loanId === loanId && !r.deleted).sort((a, b) => a.ts - b.ts)
-    .map((r) => { left -= r.amount; return { id: r.id, ts: r.ts, amount: r.amount, note: r.note || null, by: r.by, leftAfter: Math.max(0, left) }; });
+    .map((r) => { left -= r.amount; return { id: r.id, ts: r.ts, noTime: !!r.noTime, amount: r.amount, note: r.note || null, by: r.by, leftAfter: Math.max(0, left) }; });
   const paid = loan.amount - left;
   return { loan, for: loan.for || 'other', total: loan.amount, paid, left: Math.max(0, left), pays };
 }
@@ -203,7 +203,7 @@ export function loanLedger(records, currency) {
   return { people, total };
 }
 
-// name(id) → person's name · forName(id) → [icon, name] · date(ts) → date text
+// name(id) → person's name · forName(id) → [icon, name] · date(ts, noTime) → date text
 export function ledgerText(ledger, currency, { name, forName, date }) {
   const m = (n) => money(n, currency);
   const out = ['🤝 دفتر قرض', '', `📤 بالای مردم: ${m(ledger.total.theyOwe)}`, `📥 بالای ما: ${m(ledger.total.weOwe)}`];
@@ -212,9 +212,9 @@ export function ledgerText(ledger, currency, { name, forName, date }) {
     for (const st of p.loans) {
       const [ic, nm] = forName(st.for);
       const lent = st.loan.dir === 'lent';
-      out.push(`${lent ? '📤 قرض دادیم' : '📥 قرض گرفتیم'} · ${date(st.loan.ts)} · ${ic} ${nm}${st.loan.note ? ` · ${st.loan.note}` : ''}`);
+      out.push(`${lent ? '📤 قرض دادیم' : '📥 قرض گرفتیم'} · ${date(st.loan.ts, !!st.loan.noTime)} · ${ic} ${nm}${st.loan.note ? ` · ${st.loan.note}` : ''}`);
       out.push(`   کل: ${m(st.total)}`);
-      for (const x of st.pays) out.push(`   💵 ${date(x.ts)} · ${lent ? 'پس آورد' : 'پس دادیم'} ${m(x.amount)}${x.note ? ` · ${x.note}` : ''} → باقی ${m(x.leftAfter)}`);
+      for (const x of st.pays) out.push(`   💵 ${date(x.ts, x.noTime)} · ${lent ? 'پس آورد' : 'پس دادیم'} ${m(x.amount)}${x.note ? ` · ${x.note}` : ''} → باقی ${m(x.leftAfter)}`);
       out.push(`   ${lent ? 'پس آورد' : 'پس دادیم'}: ${m(st.paid)} · ${st.left ? `باقی: ${m(st.left)}` : '✅ صاف'}`);
     }
     if (p.theyOwe) out.push(`➡️ بالای او: ${m(p.theyOwe)}`);

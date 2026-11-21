@@ -139,3 +139,8 @@ test('loan "for what" must be an id; bad values become other', () => {
   assert.equal(cleanRecord('loans', { id: 'l1', kind: 'loan', dir: 'lent', who: 'c1', currency: 'AFN', for: '<img onerror=x>' }).for, 'other');
   assert.equal(cleanRecord('loans', { id: 'p1', kind: 'pay', loanId: 'l1', note: 'x'.repeat(300) }).note.length, 120);
 });
+
+test('noTime (loan entered with an older date) is a plain true/false', () => {
+  assert.equal(cleanRecord('loans', { id: 'p1', kind: 'pay', loanId: 'l1', noTime: true }).noTime, true);
+  assert.equal(cleanRecord('loans', { id: 'p1', kind: 'pay', loanId: 'l1', noTime: '<b>' }).noTime, false);
+});

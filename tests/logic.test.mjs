@@ -397,7 +397,7 @@ const AQRAB = d('2026-11-13'), MIZAN = d('2026-10-10'), QAWS = d('2026-12-10');
 const LOANS = [
   { id: 'L1', kind: 'loan', dir: 'borrowed', who: 'c1', amount: 10000, currency: 'AFN', for: 'house', note: 'سقف', ts: MIZAN },
   { id: 'P1', kind: 'pay', loanId: 'L1', amount: 3000, note: 'نقد', ts: AQRAB },
-  { id: 'P2', kind: 'pay', loanId: 'L1', amount: 2000, ts: QAWS },
+  { id: 'P2', kind: 'pay', loanId: 'L1', amount: 2000, ts: QAWS, noTime: true },
   { id: 'L2', kind: 'loan', dir: 'lent', who: 'c2', amount: 4000, currency: 'AFN', for: 'wedding', ts: AQRAB },
   { id: 'P3', kind: 'pay', loanId: 'L2', amount: 4000, ts: QAWS },
   { id: 'L3', kind: 'loan', dir: 'lent', who: 'c1', amount: 500, currency: 'USD', ts: AQRAB },
@@ -431,7 +431,7 @@ test('monthCash: leftover carries to next month, overspending carries as minus, 
 test('loanStatement: total, each dated payment with balance after it, paid and left', () => {
   const st = loanStatement(LOANS, 'L1');
   assert.deepEqual([st.total, st.paid, st.left, st.for], [10000, 5000, 5000, 'house']);
-  assert.deepEqual(st.pays.map((x) => [x.amount, x.note, x.leftAfter]), [[3000, 'نقد', 7000], [2000, null, 5000]]);
+  assert.deepEqual(st.pays.map((x) => [x.amount, x.note, x.leftAfter, x.noTime]), [[3000, 'نقد', 7000, false], [2000, null, 5000, true]]);
   assert.equal(loanStatement(LOANS, 'L4'), null);   // deleted
   assert.equal(loanStatement(LOANS, 'L2').left, 0);
 });
