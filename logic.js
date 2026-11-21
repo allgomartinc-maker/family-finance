@@ -357,5 +357,11 @@ export function listText(grocery, name, unit) {
   return `🛒 لست سودا\n\n${rows.length ? rows.join('\n') : '—'}`;
 }
 
+// An invite link pasted from WhatsApp (any text around it is fine) → { fid, code } or null.
+export function parseInvite(text) {
+  const m = String(text ?? '').match(/#join=([a-z0-9]{10,40})\.([a-z0-9]{20,40})/);
+  return m ? { fid: m[1], code: m[2] } : null;
+}
+
 // Picking a person on a phone needs their PIN (people added before PINs existed: none until one is set).
 export const needsPin = (m, currentMe) => !!m?.pin && m.id !== currentMe;

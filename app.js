@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, LOAN_FOR, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS
 import {
   monthKey, shiftMonth, monthLabel, totals, faDigits, money,
   roleOf, canTab, cashBalances, visibleTxns, loansView, jarTotals, abroadSummary,
-  monthCompare, jarsMonthNet, monthCash, loanFlows, loanLedger, loanStatement, loanTotals, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
+  monthCompare, jarsMonthNet, monthCash, loanFlows, loanLedger, loanStatement, loanTotals, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs, parseInvite,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -21,6 +21,11 @@ const $cam = document.getElementById('cam');
 const CLOUD = emulator ? emulatorConfig : firebaseConfig;
 const hasFamily = () => { try { return !!localStorage.getItem('ff-family'); } catch { return false; } };
 const siteLink = () => `${location.origin}${location.pathname}`;
+// Join that family: the page reloads and the normal join brings everything down; then "who are you?".
+function joinFamily({ fid, code }) {
+  location.hash = `join=${fid}.${code}`;
+  location.reload();
+}
 function becomeMe(v) {
   unlockedUntil = 0; pocketOpen = false; P = null;
   S.me = v; localStorage.setItem('ff-me', v); V.modal = null;
@@ -409,6 +414,7 @@ function sheetTitle(M) {
     case 'member': return M.self ? 'من کی هستم؟' : 'عضو نو';
     case 'who': return 'شما کی هستید؟';
     case 'welcome': return 'خوش آمدید';
+    case 'paste': return 'لینک دعوت را اینجا بچسبانید';
     case 'login': return 'ورود — نام کاربری و رمز';
     case 'mlogin': return 'ورود برای ' + (nm(M.memberId) || member(M.memberId)?.emoji || '');
     case 'pinForgot': return 'رمز را فراموش کردم';
@@ -467,9 +473,16 @@ function modalView() {
     }
     case 'welcome':
       return sheet('👋', `
+        <button class="save" style="background:var(--in)" data-a="pasteInvite">📋 لینک دعوت دارم — بچسبانم</button>
+        <p class="lbl" style="text-align:center">لینک را از واتساپ کاپی کنید، بعد این دکمه را بزنید</p>
         <button class="save" data-a="loginStart">🔑 ورود — نام کاربری و رمز دارم</button>
-        <p class="lbl" style="text-align:center">مدیر فامیل برای شما نام کاربری و رمز می‌سازد</p>
         <button class="save" style="background:#555" data-a="newFamily">🆕 فامیل نو می‌سازم — من مدیر هستم</button>`);
+    case 'paste':
+      return sheet('📋', `
+        <label class="field">🔗<input id="invtext" placeholder="لینک دعوت را اینجا بچسبانید" autocapitalize="none" spellcheck="false" dir="ltr"></label>
+        ${M.err ? `<p class="out-c" style="text-align:center;font-weight:700">❗ ${esc(M.err)}</p>` : ''}
+        <button class="save" data-a="pasteGo">✅ وصل شو به فامیل</button>
+        <p class="lbl" style="text-align:center">در جعبه انگشت را نگه دارید ← Paste</p>`);
     case 'login':
     case 'pinForgot': {
       const f = M.kind === 'login';
@@ -502,7 +515,8 @@ function modalView() {
         <button class="tile ${m.id === S.me ? 'sel' : ''}" data-a="iam" data-v="${m.id}">
           <span class="badge">${ROLE_ICON[roleOf(m)]}</span>${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}
         <button class="tile add" data-a="newSelf"><span class="pic">➕</span><small>من نو هستم</small></button></div>
-        ${CLOUD ? '<button class="save" style="background:var(--sel)" data-a="loginStart">🔑 ورود با نام کاربری و رمز</button>' : ''}`);
+        ${CLOUD ? `<button class="save" style="background:var(--in)" data-a="pasteInvite">📋 لینک دعوت دارم — بچسبانم</button>
+          <button class="save" style="background:var(--sel)" data-a="loginStart">🔑 ورود با نام کاربری و رمز</button>` : ''}`);
     case 'people':
       return sheet('👨‍👩‍👧', `<div class="list">${S.members.filter((m) => !m.deleted).map((m) => `
         <div class="item">${face(m, 'f56')}<span class="grow">${esc(m.name)}</span>
@@ -703,7 +717,8 @@ function modalView() {
       return sheet('📲', `<div class="card" style="display:grid;justify-items:center">
           <div id="qr" style="width:260px;height:260px;display:grid;place-items:center">⏳</div></div>
         ${navigator.share ? '<button class="save" data-a="shareLink">📤 فرستادن لینک</button>' : ''}
-        <button class="save" style="background:#555" data-a="copyLink">📋 کاپی لینک</button>`);
+        <button class="save" style="background:#555" data-a="copyLink">📋 کاپی لینک</button>
+        <p class="lbl" style="text-align:center">آیکون خانه (Home Screen): لینک را کاپی کنید ← اپ را باز کنید ← 📋 لینک دعوت دارم</p>`);
     case 'tx': {
       const cats = catsFor(BASE_CATS, S.cats || [], M.type).map((c) => ({ ...c, icon: esc(c.icon), name: esc(c.name) }));
       const head = `<span class="${M.type}-c">${M.type === 'in' ? '⬇️' : '⬆️'}</span> ${M.cat ? catOf(M.type, M.cat).icon : ''}`;
@@ -953,6 +968,19 @@ const A = {
 
   // ---------- username + password ----------
   newFamily: () => { V.modal = { kind: 'setup' }; render(); },
+  // Join with an invite link copied from WhatsApp — for the home-screen app, which can't open links itself.
+  pasteInvite: async () => {
+    let inv = null;
+    try { inv = parseInvite(await navigator.clipboard.readText()); } catch { /* no permission: show the box */ }
+    if (inv) { joinFamily(inv); return; }
+    V.modal = { kind: 'paste', back: V.modal }; render();
+    document.getElementById('invtext')?.focus();
+  },
+  pasteGo: () => {
+    const inv = parseInvite(document.getElementById('invtext')?.value);
+    if (!inv) { V.modal.err = 'این لینک دعوت نیست — دوباره از واتساپ کاپی کنید'; render(); return; }
+    joinFamily(inv);
+  },
   loginStart: () => { V.modal = { kind: 'login', back: V.modal }; render(); },
   loginGo: async () => {
     const M = V.modal;
@@ -966,8 +994,7 @@ const A = {
       if (!p) { Object.assign(M, { busy: false, err: 'نام کاربری یا رمز درست نیست' }); render(); return; }
       // Join that family as that person. The page reloads and the normal join brings everything down.
       localStorage.setItem('ff-me', p.memberId);
-      location.hash = `join=${p.fid}.${p.code}`;
-      location.reload();
+      joinFamily(p);
     } catch (e) {
       console.error(e);
       Object.assign(M, { busy: false, err: navigator.onLine ? 'مشکل — دوباره کوشش کنید' : 'انترنت نیست' }); render();

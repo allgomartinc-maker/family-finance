@@ -482,3 +482,13 @@ test('loanTotals: borrowed and lent each have total · paid · left, overall and
   assert.deepEqual(t.people.map((p) => [p.who, p.borrowed.left, p.lent.total]), [['c1', 5000, 0], ['c2', 0, 4000]]);
   assert.deepEqual(loanTotals(LOANS, 'USD').lent, { total: 500, paid: 0, left: 500 });
 });
+
+import { parseInvite } from '../logic.js';
+test('parseInvite: finds the family in a pasted invite link, ignores anything else', () => {
+  const link = 'https://allgomartinc-maker.github.io/family-finance/#join=abcdefghjk23456789mn.pqrstuvwxyz23456789abcde';
+  assert.deepEqual(parseInvite(link), { fid: 'abcdefghjk23456789mn', code: 'pqrstuvwxyz23456789abcde' });
+  assert.deepEqual(parseInvite(`سلام! ${link} ← این را باز کن`), { fid: 'abcdefghjk23456789mn', code: 'pqrstuvwxyz23456789abcde' });
+  assert.equal(parseInvite('https://allgomartinc-maker.github.io/family-finance/'), null);
+  assert.equal(parseInvite('#join=short.code'), null);
+  assert.equal(parseInvite(''), null);
+});
