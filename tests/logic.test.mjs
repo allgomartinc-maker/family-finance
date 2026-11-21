@@ -419,12 +419,16 @@ test('monthCash: leftover carries to next month, overspending carries as minus, 
     { type: 'in', amount: 50, currency: 'USD', ts: MIZAN },
   ];
   const mizan = monthCash(txns, LOANS, 'AFN', monthKey(MIZAN));
-  assert.deepEqual(mizan, { opening: 0, in: 1000, out: 9000, loanIn: 10000, loanOut: 0, closing: 2000 });
+  // borrowing 10,000 (L1) is a debt, not money in hand
+  assert.deepEqual(mizan, { opening: 0, in: 1000, out: 9000, loanPaid: 0, lent: 0, repaid: 0, closing: -8000 });
   const aqrab = monthCash(txns, LOANS, 'AFN', monthKey(AQRAB));
-  assert.deepEqual(aqrab, { opening: 2000, in: 0, out: 2500, loanIn: 0, loanOut: 7000, closing: -7500 });
+  // paid 3,000 on our debt (P1) and lent 4,000 (L2) — both leave our hand
+  assert.deepEqual(aqrab, { opening: -8000, in: 0, out: 2500, loanPaid: 3000, lent: 4000, repaid: 0, closing: -17500 });
   const qaws = monthCash(txns, LOANS, 'AFN', monthKey(QAWS));
-  assert.equal(qaws.opening, -7500);
-  assert.equal(qaws.closing, -7500 + 4000);   // P2 was entered with an older date (noTime): history, not cash
+  assert.equal(qaws.opening, -17500);
+  assert.equal(qaws.repaid, 4000);              // they paid us back (P3)
+  assert.equal(qaws.loanPaid, 0);               // P2 was entered with an older date (noTime): history, not cash
+  assert.equal(qaws.closing, -17500 + 4000);
   assert.deepEqual(loanFlows(LOANS, 'AFN', true).map((x) => x.amount), [10000, 3000, 4000, 4000]);
   assert.equal(monthCash(txns, LOANS, 'USD', monthKey(AQRAB)).opening, 50);
 });
@@ -463,9 +467,11 @@ test('ledgerText: WhatsApp text: each loan, its dated payments with balance afte
 test('reportText with cash: shows carry-in, loan money and what goes to next month', () => {
   const ts = AQRAB;
   const t = reportText({ txns: [{ type: 'out', amount: 100, currency: 'AFN', ts, by: 'a', cat: 'food' }], currency: 'AFN', month: monthKey(ts),
-    cat: () => ['🛒', 'سودا'], person: () => 'بابه', cash: { opening: -50, in: 0, out: 100, loanIn: 1000, loanOut: 0, closing: 850 } });
+    cat: () => ['🛒', 'سودا'], person: () => 'بابه', cash: { opening: -50, in: 0, out: 100, loanPaid: 200, lent: 0, repaid: 1000, closing: 650 } });
   assert.match(t, /↪️ از ماه قبل: − /);
-  assert.match(t, /🤝 قرض آمد/);
+  assert.match(t, /🤝 قرض پس دادیم: − /);
+  assert.match(t, /💵 قرض پس آوردند: \+ /);
+  assert.doesNotMatch(t, /📤 قرض دادیم/);
   assert.match(t, /🟢 باقی: .* \(به ماه بعد\)/);
 });
 

@@ -158,18 +158,25 @@ export function loanFlows(records, currency, cashOnly = false) {
   return out.sort((a, b) => a.ts - b.ts);
 }
 
-// One month of cash: what was left from before (opening), this month's real income/spending,
-// loan money in/out, and what is left to carry into next month (closing). Overspending carries as minus.
+// Money in hand for one month: left from before (opening) + income − spending − what we paid on our loans
+// − what we lent + what people paid us back = closing (carries to next month; overspending carries as minus).
+// Borrowed money is never "in hand": a debt stays on its own. Old dated entries (noTime) are history only.
 export function monthCash(txns, loans, currency, month) {
-  const r = { opening: 0, in: 0, out: 0, loanIn: 0, loanOut: 0, closing: 0 };
-  const add = (ts, isIn, amount, inKey, outKey) => {
+  const r = { opening: 0, in: 0, out: 0, loanPaid: 0, lent: 0, repaid: 0, closing: 0 };
+  const add = (ts, sign, amount, key) => {
     const k = monthKey(ts);
-    if (k < month) r.opening += isIn ? amount : -amount;
-    else if (k === month) r[isIn ? inKey : outKey] += amount;
+    if (k < month) r.opening += sign * amount;
+    else if (k === month) r[key] += amount;
   };
-  for (const x of txns) if (!x.deleted && x.currency === currency) add(x.ts, x.type === 'in', x.amount, 'in', 'out');
-  for (const f of loanFlows(loans, currency, true)) add(f.ts, f.dir === 'in', f.amount, 'loanIn', 'loanOut');
-  r.closing = r.opening + r.in + r.loanIn - r.out - r.loanOut;
+  for (const x of txns) if (!x.deleted && x.currency === currency) add(x.ts, x.type === 'in' ? 1 : -1, x.amount, x.type);
+  for (const f of loanFlows(loans, currency, true)) {
+    const borrowed = f.loan.dir === 'borrowed';
+    if (!f.pay && borrowed) continue;                       // borrowing: not money in hand
+    if (!f.pay) add(f.ts, -1, f.amount, 'lent');            // we lent it out
+    else if (borrowed) add(f.ts, -1, f.amount, 'loanPaid'); // we paid our debt
+    else add(f.ts, 1, f.amount, 'repaid');                  // they paid us back
+  }
+  r.closing = r.opening + r.in + r.repaid - r.out - r.loanPaid - r.lent;
   return r;
 }
 
@@ -333,7 +340,9 @@ export function reportText({ txns, currency, month, cat, person, cash = null }) 
   const out = [`📊 حساب خانواده — ${monthLabel(month)}`, ''];
   if (cash) {
     out.push(`↪️ از ماه قبل: ${cash.opening < 0 ? '− ' : ''}${m(Math.abs(cash.opening))}`, `⬇️ آمد: ${m(t.in)}`, `⬆️ مصرف: ${m(t.out)}`);
-    if (cash.loanIn || cash.loanOut) out.push(`🤝 قرض آمد: ${m(cash.loanIn)}`, `🤝 قرض رفت: ${m(cash.loanOut)}`);
+    if (cash.loanPaid) out.push(`🤝 قرض پس دادیم: − ${m(cash.loanPaid)}`);
+    if (cash.lent) out.push(`📤 قرض دادیم: − ${m(cash.lent)}`);
+    if (cash.repaid) out.push(`💵 قرض پس آوردند: + ${m(cash.repaid)}`);
     out.push(`${end(cash.closing)} (به ماه بعد)`);
   } else out.push(`⬇️ آمد: ${m(t.in)}`, `⬆️ مصرف: ${m(t.out)}`, end(t.net));
   const cats = Object.entries(t.byCat).sort((a, b) => b[1] - a[1]);
