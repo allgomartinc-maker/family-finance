@@ -1,9 +1,11 @@
 // Username + password login for family members. Pure Web Crypto, no Firebase. Tested in tests/login.test.mjs.
 //
 // The admin makes a username + password for a person. From them we derive (PBKDF2, slow on purpose):
-//   id  → name of the cloud login record (can't be guessed without the password)
-//   key → AES key that seals { fid, code, memberId } inside that record.
-// The cloud never sees the password, and the family's join code inside the record is encrypted.
+//   id, code → a tiny private "login family" in the cloud (families/{id}, join code = code).
+//              Only someone who knows the username + password can work these out and get in.
+//   key      → AES key that seals { fid, code, memberId } of the real family inside it.
+// The cloud never sees the password, and the real family's join code inside is encrypted.
+// This works with the normal family rules — nothing extra to switch on in Firebase.
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -27,17 +29,19 @@ export async function loginKeys(user, pass) {
   const base = await crypto.subtle.importKey('raw', enc.encode(normPass(pass)), 'PBKDF2', false, ['deriveBits']);
   const bits = new Uint8Array(await crypto.subtle.deriveBits(
     { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(`ff-login:${normUser(user)}`), iterations: ROUNDS }, base, 512));
-  const id = hex(await crypto.subtle.digest('SHA-256', bits.slice(0, 32))).slice(0, 40);
+  const half = bits.slice(0, 32);
+  const id = hex(await crypto.subtle.digest('SHA-256', half)).slice(0, 40);
+  const code = hex(await crypto.subtle.digest('SHA-256', new Uint8Array([...half, 1]))).slice(0, 40);
   const key = await crypto.subtle.importKey('raw', bits.slice(32), 'AES-GCM', false, ['encrypt', 'decrypt']);
-  return { id, key };
+  return { id, code, key };
 }
 
-// → { id, doc: { iv, ct } } to store in the cloud as logins/{id}
+// → { id, code, doc: { iv, ct } } to store in the cloud in the login family {id}
 export async function sealLogin(user, pass, payload) {
-  const { id, key } = await loginKeys(user, pass);
+  const { id, code, key } = await loginKeys(user, pass);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(payload)));
-  return { id, doc: { iv: b64(iv), ct: b64(ct) } };
+  return { id, code, doc: { iv: b64(iv), ct: b64(ct) } };
 }
 
 // → payload, or null when the password is wrong or the record was changed.

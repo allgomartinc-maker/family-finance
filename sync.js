@@ -29,11 +29,19 @@ function fb(config, emulator) {
   return fbReady;
 }
 
-// Username + password login: read logins/{id} (its content is encrypted, see login.js). null if none.
-export async function getLogin({ config, emulator, id }) {
-  const { F, db } = await fb(config, emulator);
-  const d = await F.getDocFromServer(F.doc(db, `logins/${id}`));
-  return d.exists() ? d.data() : null;
+// Username + password login (login.js): join the private login family {id} with its code and read
+// the sealed record. Wrong username/password → that family doesn't exist → null.
+const LOGIN_DOC = (id) => `families/${id}/members/login`;
+export async function getLogin({ config, emulator, id, code }) {
+  const { F, db, uid } = await fb(config, emulator);
+  const denied = (e) => e?.code === 'permission-denied' || e?.code === 'not-found';
+  try {
+    await F.setDoc(F.doc(db, `families/${id}/joins/${uid}`), { code, ts: Date.now() });
+  } catch (e) { if (!denied(e)) throw e; }   // already joined earlier, or no such login
+  try {
+    const d = await F.getDocFromServer(F.doc(db, LOGIN_DOC(id)));
+    return d.exists() ? d.data() : null;
+  } catch (e) { if (denied(e)) return null; throw e; }
 }
 
 export async function startSync({ config, emulator, getState, onRemote, onStatus, invite = null }) {
@@ -137,8 +145,13 @@ export async function startSync({ config, emulator, getState, onRemote, onStatus
   const inviteLink = () => `${location.origin}${location.pathname}#join=${fam.fid}.${fam.code}`;
   const net = (on) => (on ? F.enableNetwork(db) : F.disableNetwork(db)); // used by emulator tests
   // Logins for this family (admin makes them; the record holds only the family id in plain text).
-  const saveLogin = (id, doc) => F.setDoc(F.doc(db, `logins/${id}`), { ...doc, fid: fam.fid, ts: Date.now() });
-  const deleteLogin = (id) => F.deleteDoc(F.doc(db, `logins/${id}`));
-  const readLogin = (id) => getLogin({ config, emulator, id });
+  async function saveLogin(id, code, doc) {
+    const ts = Date.now();
+    await F.setDoc(F.doc(db, `families/${id}`), { owner: uid, joinCode: code, ts });
+    await F.setDoc(F.doc(db, `families/${id}/joins/${uid}`), { code, ts });
+    await F.setDoc(F.doc(db, LOGIN_DOC(id)), { id: 'login', ...doc, ts });
+  }
+  const deleteLogin = (id) => F.deleteDoc(F.doc(db, LOGIN_DOC(id)));   // old password stops working
+  const readLogin = (id, code) => getLogin({ config, emulator, id, code });
   return { push, getMedia, inviteLink, joined, uid, net, saveLogin, deleteLogin, readLogin, familyId: fam.fid, joinCode: fam.code };
 }

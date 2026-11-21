@@ -994,18 +994,16 @@ const A = {
     if (!user.trim() || !pass.trim()) { M.err = 'نام کاربری و رمز را بنویسید'; render(); return; }
     M.busy = true; M.err = null; render();
     try {
-      const { id } = await loginKeys(user, pass);
+      const { id, code } = await loginKeys(user, pass);
       const { getLogin } = await import('./sync.js');
-      const p = await openLogin(user, pass, await getLogin({ config: CLOUD, emulator, id }));
+      const p = await openLogin(user, pass, await getLogin({ config: CLOUD, emulator, id, code }));
       if (!p) { Object.assign(M, { busy: false, err: 'نام کاربری یا رمز درست نیست' }); render(); return; }
       // Join that family as that person. The page reloads and the normal join brings everything down.
-      localStorage.setItem('ff-me', p.memberId);
+      S.me = p.memberId; localStorage.setItem('ff-me', p.memberId);   // log in as that person
       joinFamily(p);
     } catch (e) {
       console.error(e);
-      const off = e?.code === 'permission-denied';   // logins not switched on in Firebase yet
-      Object.assign(M, { busy: false, err: off ? 'ورود با نام کاربری هنوز روشن نیست — دکمه سبز 📋 را بزنید'
-        : navigator.onLine ? 'مشکل — دوباره کوشش کنید' : 'انترنت نیست' }); render();
+      Object.assign(M, { busy: false, err: navigator.onLine ? `مشکل — ${e?.code || 'دوباره کوشش کنید'}` : 'انترنت نیست' }); render();
     }
   },
   loginBack: () => { V.modal = V.modal.back || null; render(); },
@@ -1022,8 +1020,8 @@ const A = {
     M.busy = true; M.user = user; render();
     try {
       const pass = newPassword();
-      const { id, doc } = await sealLogin(user, pass, { fid: SY.familyId, code: SY.joinCode, memberId: m.id });
-      await SY.saveLogin(id, doc);
+      const { id, code, doc } = await sealLogin(user, pass, { fid: SY.familyId, code: SY.joinCode, memberId: m.id });
+      await SY.saveLogin(id, code, doc);
       if (m.loginId && m.loginId !== id) SY.deleteLogin(m.loginId).catch(() => {});   // old password stops working
       await commit(() => { m.loginUser = user; m.loginId = id; log('login', '🔑', m.name || user); });
       Object.assign(M, { busy: false, pass });
@@ -1043,8 +1041,8 @@ const A = {
     if (!SY) { M.err = 'انترنت لازم است'; render(); return; }
     M.busy = true; M.err = null; render();
     try {
-      const { id } = await loginKeys(user, pass);
-      const p = await openLogin(user, pass, await SY.readLogin(id));
+      const { id, code } = await loginKeys(user, pass);
+      const p = await openLogin(user, pass, await SY.readLogin(id, code));
       const owner = B.target === 'pocket' ? S.me : pinOwner(B)?.id;
       if (!p || p.fid !== SY.familyId || p.memberId !== owner) { Object.assign(M, { busy: false, err: 'نام کاربری یا رمز درست نیست' }); render(); return; }
       log('pinReset', '🔑🔒', member(owner)?.name || '');

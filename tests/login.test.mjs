@@ -14,8 +14,10 @@ test('username and password are forgiving: case, spaces, dashes', () => {
 });
 
 test('seal → open with the right username + password gives back family and member', async () => {
-  const { id, doc } = await sealLogin('Ali', 'ab3k-7mpq', P);
+  const { id, code, doc } = await sealLogin('Ali', 'ab3k-7mpq', P);
   assert.match(id, /^[0-9a-f]{40}$/);
+  assert.match(code, /^[0-9a-f]{40}$/);
+  assert.notEqual(code, id);
   assert.deepEqual(await openLogin('ali', 'AB3K7MPQ', doc), P);
   assert.equal((await loginKeys(' ALI ', 'ab3k 7mpq')).id, id);   // same record found however it is typed
 });

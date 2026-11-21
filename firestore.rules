@@ -3,25 +3,12 @@ rules_version = '2';
 // Tested in tests/rules/rules.test.mjs (npm run test:rules).
 service cloud.firestore {
   match /databases/{db}/documents {
-
     function signedIn() { return request.auth != null; }
     function famPath(fid) { return /databases/$(db)/documents/families/$(fid); }
     function isIn(fid) {
       return signedIn() && exists(/databases/$(db)/documents/families/$(fid)/joins/$(request.auth.uid));
     }
     function dataColl(c) { return c in ['members', 'catalog', 'grocery', 'txns', 'bills', 'log', 'media', 'cash', 'loans', 'jars', 'contacts', 'cats']; }
-
-    // Username + password logins (login.js). The record name comes from the password and its
-    // content is encrypted, so it can only be read by someone who knows both. No listing.
-    // Only members of a family can make or remove logins for that family.
-    match /logins/{id} {
-      allow get: if signedIn();
-      allow list: if false;
-      allow create, update: if signedIn() && id.size() == 40
-        && request.resource.data.keys().hasOnly(['iv', 'ct', 'fid', 'ts'])
-        && request.resource.data.fid is string && isIn(request.resource.data.fid);
-      allow delete: if signedIn() && isIn(resource.data.fid);
-    }
 
     match /families/{fid} {
       allow create: if signedIn()

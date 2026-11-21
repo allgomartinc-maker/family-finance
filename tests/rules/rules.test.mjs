@@ -96,33 +96,25 @@ test('loans, jars and contacts are family-only', async () => {
   }
 });
 
-// ---------- username + password logins ----------
-const LID = 'a'.repeat(40);
-const LOGIN = { iv: 'x', ct: 'y', fid: 'f1', ts: 1 };
+// ---------- username + password logins (login.js) use the normal family rules ----------
+const LID = 'a'.repeat(40), LCODE = 'b'.repeat(40);
 
-test('logins: a family member can save a login for their own family', async () => {
-  await assertSucceeds(setDoc(doc(as('owner'), `logins/${LID}`), LOGIN));
+test('login: admin makes a private login family and stores the sealed record in it', async () => {
+  const db = as('owner');
+  await assertSucceeds(setDoc(doc(db, `families/${LID}`), { owner: 'owner', joinCode: LCODE, ts: 1 }));
+  await assertSucceeds(setDoc(doc(db, `families/${LID}/joins/owner`), { code: LCODE, ts: 1 }));
+  await assertSucceeds(setDoc(doc(db, `families/${LID}/members/login`), { id: 'login', iv: 'x', ct: 'y', ts: 1 }));
 });
 
-test('logins: an outsider cannot save a login for a family they are not in', async () => {
-  await assertFails(setDoc(doc(as('stranger'), `logins/${LID}`), LOGIN));
-});
-
-test('logins: only iv/ct/fid/ts allowed, record name must be 40 long', async () => {
-  await assertFails(setDoc(doc(as('owner'), `logins/${LID}`), { ...LOGIN, code: 'leak' }));
-  await assertFails(setDoc(doc(as('owner'), 'logins/short'), LOGIN));
-});
-
-test('logins: anyone signed in can read one by its exact name, nobody can list them', async () => {
-  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), `logins/${LID}`), LOGIN));
-  await assertSucceeds(getDoc(doc(as('newphone'), `logins/${LID}`)));
-  const { collection, getDocs } = await import('firebase/firestore');
-  await assertFails(getDocs(collection(as('newphone'), 'logins')));
-  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), `logins/${LID}`)));
-});
-
-test('logins: only a family member can delete one', async () => {
-  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), `logins/${LID}`), LOGIN));
-  await assertFails(deleteDoc(doc(as('stranger'), `logins/${LID}`)));
-  await assertSucceeds(deleteDoc(doc(as('owner'), `logins/${LID}`)));
+test('login: a new phone with the right code gets in and reads it; wrong code or no family → blocked', async () => {
+  await env.withSecurityRulesDisabled(async (c) => {
+    const db = c.firestore();
+    await setDoc(doc(db, `families/${LID}`), { owner: 'owner', joinCode: LCODE });
+    await setDoc(doc(db, `families/${LID}/members/login`), { id: 'login', iv: 'x', ct: 'y' });
+  });
+  await assertFails(setDoc(doc(as('guesser'), `families/${LID}/joins/guesser`), { code: 'c'.repeat(40), ts: 1 }));
+  await assertFails(getDoc(doc(as('guesser'), `families/${LID}/members/login`)));
+  await assertFails(setDoc(doc(as('guesser'), `families/${'d'.repeat(40)}/joins/guesser`), { code: LCODE, ts: 1 }));
+  await assertSucceeds(setDoc(doc(as('newphone'), `families/${LID}/joins/newphone`), { code: LCODE, ts: 1 }));
+  await assertSucceeds(getDoc(doc(as('newphone'), `families/${LID}/members/login`)));
 });
