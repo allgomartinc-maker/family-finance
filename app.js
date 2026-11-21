@@ -226,12 +226,13 @@ function loansViewUI() {
 }
 
 // One loan, plainly: who / for what / when, then total · paid · left, then every payment (date, amount, note, left after).
-function statementCard(st, person = true) {
+function statementCard(st, person = true, edit = false) {
   const l = st.loan, lent = l.dir === 'lent', f = forOf(st.for), cur = l.currency;
   const paidWord = lent ? 'پس آورد' : 'پس دادیم';
   return `<div class="stmt">
     <div class="stmt-head">${lent ? '📤 قرض دادیم' : '📥 قرض گرفتیم'}${person ? ` ${lent ? 'به' : 'از'} ${who(l.who)}` : ''}</div>
-    <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · 📅 ${dateLabel(l.ts, l.noTime)}</div>
+    ${edit ? `<button class="stmt-for forbtn" data-a="loanForEdit">${f.icon} برای: <b>${f.name}</b> ✏️</button><div class="stmt-for">📅 ${dateLabel(l.ts, l.noTime)}</div>`
+      : `<div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · 📅 ${dateLabel(l.ts, l.noTime)}</div>`}
     ${l.note ? `<div class="note">📝 ${esc(l.note)}</div>` : ''}
     <div class="stmt-sum">
       <div><span class="lab">کل قرض</span><b>${money(st.total, cur)}</b></div>
@@ -241,7 +242,10 @@ function statementCard(st, person = true) {
     ${st.pays.length ? `<div class="stmt-pays">${st.pays.map((x) => `<div class="stmt-pay">
       <span>📅 ${dateLabel(x.ts, x.noTime)} · ${paidWord}</span><b>💵 ${money(x.amount, cur)}</b>
       ${x.note ? `<span class="note">📝 ${esc(x.note)}</span>` : ''}
-      <span class="left">بعد از این، باقی: ${money(x.leftAfter, cur)}</span></div>`).join('')}</div>` : ''}
+      <span class="left">بعد از این، باقی: ${money(x.leftAfter, cur)}</span>
+      ${!edit ? '' : V.modal?.confirmDel === x.id ? `<span class="acts"><b class="out-c">پاک شود؟</b>
+          <button class="mini danger" data-a="payDelYes" data-v="${x.id}">🗑️ بلی</button><button class="mini" data-a="payDelNo">↩️ نه</button></span>`
+        : `<span class="acts"><button class="mini" data-a="payEdit" data-v="${x.id}">✏️ تغییر</button><button class="mini" data-a="payDel" data-v="${x.id}">🗑️ پاک</button></span>`}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -352,7 +356,8 @@ function sheetTitle(M) {
     case 'contact': return 'شخص نو';
     case 'loanNew': return (M.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم') + (!M.who ? ' — به/از کی؟' : !M.for ? ' — برای چه؟' : ' — ' + nm(M.who));
     case 'loan': { const l = S.loans.find((r) => r.id === M.id); return 'قرض ' + nm(l?.who); }
-    case 'loanPay': { const l = S.loans.find((r) => r.id === M.id); return (l?.dir === 'lent' ? 'پس آورد — ' : 'ما پس دادیم — ') + nm(l?.who); }
+    case 'loanPay': { const l = S.loans.find((r) => r.id === M.id); return (M.editId ? 'تغییر پرداخت — ' : l?.dir === 'lent' ? 'پس آورد — ' : 'ما پس دادیم — ') + nm(l?.who); }
+    case 'loanFor': return 'قرض برای چه بود؟';
     case 'jarNew': return M.goal ? 'هدف پس‌انداز — چقدر؟' : 'پس‌انداز نو — برای چه؟';
     case 'jar': return 'پس‌انداز ' + goalOf(S.jars.find((r) => r.id === M.id)?.goal).name;
     case 'jarMove': return M.dir === 'in' ? 'گذاشتن در پس‌انداز' : 'برداشتن از پس‌انداز';
@@ -468,23 +473,30 @@ function modalView() {
       const st = loanStatement(S.loans, M.id);
       if (!st) return '';
       const l = st.loan, canEdit = isAdmin() || l.by === S.me;
-      return sheet(`${l.dir === 'lent' ? '📤' : '📥'} ${face(contact(l.who), 'f40')}`, `${statementCard(st)}
+      return sheet(`${l.dir === 'lent' ? '📤' : '📥'} ${face(contact(l.who), 'f40')}`, `${statementCard(st, true, canEdit)}
         ${canEdit && st.left ? `<button class="save" data-a="loanPayStart">💵 ${l.dir === 'lent' ? 'پس آورد' : 'پس دادن قرض'}</button>` : ''}
         ${canEdit ? '<button class="save danger" data-a="loanDel">🗑️ پاک کردن</button>' : ''}`);
+    }
+    case 'loanFor': {
+      const l = S.loans.find((r) => r.id === M.id);
+      return sheet('✏️ ❓', `<div class="grid">${LOAN_FOR.map((f) =>
+        `<button class="tile ${(l?.for || 'other') === f.id ? 'sel' : ''}" data-a="loanForSet" data-v="${f.id}"><span class="pic">${f.icon}</span><small>${f.name}</small></button>`).join('')}</div>`);
     }
     case 'loanPay': {
       const st = loanStatement(S.loans, M.id);
       if (!st) return '';
       const l = st.loan, lent = l.dir === 'lent', f = forOf(st.for);
-      const after = st.left - (+M.amount || 0);
+      const old = M.editId ? st.pays.find((x) => x.id === M.editId)?.amount || 0 : 0;   // editing: this payment is not counted yet
+      const paidBefore = st.paid - old, leftBefore = st.left + old;
+      const after = leftBefore - (+M.amount || 0);
       return sheet('💵', `<div class="stmt">
-          <div class="stmt-head">💵 ${lent ? `${who(l.who)} پس می‌آورد` : `پس دادن به ${who(l.who)}`}</div>
+          <div class="stmt-head">${M.editId ? '✏️ تغییر پرداخت — ' : '💵 '}${lent ? `${who(l.who)} پس می‌آورد` : `پس دادن به ${who(l.who)}`}</div>
           <div class="stmt-for">${f.icon} برای: <b>${f.name}</b> · قرض ${dateLabel(l.ts, l.noTime)}</div>
           ${l.note ? `<div class="note">📝 ${esc(l.note)}</div>` : ''}
           <div class="stmt-sum">
             <div><span class="lab">کل قرض</span><b>${money(st.total, l.currency)}</b></div>
-            <div><span class="lab">${lent ? 'پس آورد' : 'پس دادیم'} تا حال</span><b>${money(st.paid, l.currency)}</b></div>
-            <div class="${lent ? 'in-c' : 'out-c'}"><span class="lab">باقی</span><b>${money(st.left, l.currency)}</b></div></div></div>
+            <div><span class="lab">${lent ? 'پس آورد' : 'پس دادیم'} تا حال</span><b>${money(paidBefore, l.currency)}</b></div>
+            <div class="${lent ? 'in-c' : 'out-c'}"><span class="lab">باقی</span><b>${money(leftBefore, l.currency)}</b></div></div></div>
         ${keypad(M.amount, l.currency)}
         <div class="after">${after >= 0 ? `بعد از این، باقی: <b class="${after ? '' : 'in-c'}">${after ? money(after, l.currency) : '✅ صاف'}</b>` : '<b class="out-c">❗ بیشتر از باقی است</b>'}</div>
         ${loanExtras(M, 'برای چه؟ مثلاً قسط اول، نقد، حواله')}
@@ -955,11 +967,41 @@ const A = {
   loanPaySave: () => commit(() => {
     const M = V.modal;
     readLoanExtras(M);
+    if (M.editId) {
+      const p = S.loans.find((r) => r.id === M.editId);
+      const was = money(p.amount, M.currency);
+      p.amount = +M.amount; p.note = M.note || null;
+      if (backdated(M)) { p.ts = pickTs(M.date); p.noTime = true; }
+      log('payEdit', '✏️💵', `${was} → ${money(p.amount, M.currency)}`);
+      V.modal = { kind: 'loan', id: M.id };
+      return;
+    }
     S.loans.push({ id: uid(), kind: 'pay', loanId: M.id, note: M.note || null, amount: +M.amount, by: S.me, ts: pickTs(M.date), ...(backdated(M) ? { noTime: true } : {}) });
     const l = S.loans.find((r) => r.id === M.id);
     log('loanPay', '💵', `${contact(l?.who)?.name || ''} ${money(+M.amount, M.currency)}`);
     V.modal = { kind: 'loan', id: M.id };
   }),
+  loanForEdit: () => { V.modal = { kind: 'loanFor', id: V.modal.id }; render(); },
+  loanForSet: (v) => {
+    const l = S.loans.find((r) => r.id === V.modal.id);
+    const go = () => commit(() => { l.for = v; log('loanFor', '✏️' + forOf(v).icon, contact(l.who)?.name || ''); V.modal = { kind: 'loan', id: l.id }; });
+    if (l.by === S.me) go(); else requireAdmin(go);
+  },
+  payEdit: (v) => {
+    const p = S.loans.find((r) => r.id === v), l = S.loans.find((r) => r.id === p?.loanId);
+    if (!p || !l) return;
+    const go = () => { V.modal = { kind: 'loanPay', id: l.id, editId: p.id, amount: String(p.amount), note: p.note || '', noteOpen: true, currency: l.currency }; render(); };
+    if (p.by === S.me) go(); else requireAdmin(go);
+  },
+  payDel: (v) => { V.modal.confirmDel = v; render(); },
+  payDelNo: () => { V.modal.confirmDel = null; render(); },
+  payDelYes: (v) => {
+    const p = S.loans.find((r) => r.id === v);
+    const loanId = V.modal.id;
+    if (!p) return;
+    const del = () => commit(() => { p.deleted = true; log('payDel', '🗑️💵', money(p.amount, S.loans.find((r) => r.id === p.loanId)?.currency)); V.modal = { kind: 'loan', id: loanId }; });
+    if (p.by === S.me) del(); else requireAdmin(del);
+  },
   loanDel: () => {
     const l = S.loans.find((r) => r.id === V.modal.id);
     const del = () => commit(() => { l.deleted = true; log('loanDel', '🗑️🤝', `${contact(l.who)?.name || ''} ${money(l.amount, l.currency)}`); V.modal = null; });

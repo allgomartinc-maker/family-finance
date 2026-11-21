@@ -367,3 +367,7 @@ input.name:focus { border-color: var(--lapis); outline: none; }
 .stmt-pay .left { grid-column: 1 / -1; font-size: 14px; color: var(--soft); }
 .stmt-pay .note { grid-column: 1 / -1; margin: 2px 0 0; }
 .after { text-align: center; font-size: 18px; margin-top: 10px; }
+.stmt-pay .acts { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 4px; }
+.mini { padding: 6px 14px; border-radius: var(--r-sm); background: var(--card); font-size: 16px; font-weight: 700; box-shadow: var(--shadow); }
+.mini.danger { background: var(--anar); color: #fff; }
+.forbtn { display: block; width: 100%; padding: 6px; border-radius: var(--r-sm); background: var(--saffron-soft); }
