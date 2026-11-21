@@ -3,14 +3,14 @@ import { OUT_CATS, IN_CATS, LOAN_FOR, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS
 import {
   monthKey, shiftMonth, monthLabel, totals, faDigits, money,
   roleOf, canTab, cashBalances, visibleTxns, loansView, jarTotals, abroadSummary,
-  monthCompare, jarsMonthNet, monthCash, loanLedger, loanStatement, loanTotals, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
+  monthCompare, jarsMonthNet, monthCash, loanFlows, loanLedger, loanStatement, loanTotals, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
 import { makePin, checkPin, PIN_LEN, PIN_KEYS } from './pin.js';
 
 let S;                                   // family state (IndexedDB)
-const V = { room: null, tab: 'money', month: null, modal: null, cloud: null, waiting: false };
+const V = { room: null, tab: 'money', cashOpen: { in: true }, month: null, modal: null, cloud: null, waiting: false };
 let SY = null;                           // sync handle when Firebase is set up
 const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
@@ -62,6 +62,10 @@ const forOf = (id) => LOAN_FOR.find((f) => f.id === id) || LOAN_FOR[LOAN_FOR.len
 const todayISO = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 const pickTs = (iso) => { if (!iso || iso >= todayISO()) return Date.now(); const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d, 12).getTime(); };
 const backdated = (M) => M.date && M.date < todayISO();
+// Income/spending: the real date and time it came in or went out (defaults to now; never in the future).
+const pad2 = (n) => String(n).padStart(2, '0');
+const localISO = (ts) => { const t = new Date(ts); return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}T${pad2(t.getHours())}:${pad2(t.getMinutes())}`; };
+const whenTs = (v) => { const t = v ? new Date(v).getTime() : NaN; return Number.isFinite(t) && t < Date.now() ? t : Date.now(); };
 const loanExtras = (M, ph = 'یادداشت — برای چه؟ (اختیاری)') => `<div class="row" style="margin-top:12px;justify-content:center;gap:14px">
     <button class="iconbtn" data-a="lNote">${L(M.note ? '✅' : '📝', 'یادداشت')}</button>
     <button class="iconbtn" data-a="lDate">${L(backdated(M) ? '✅' : '📅', backdated(M) ? dateLabel(pickTs(M.date), true) : 'امروز')}</button></div>
@@ -146,15 +150,33 @@ function adminView() {
 // Money in hand as one plain sum, line by line: from last month + income − spending − loan payments = in hand.
 function cashCard(c, m) {
   const cur = S.currency;
-  const line = (ic, word, amt, sign, cls) => `<div class="mline ${cls}"><span>${ic} ${word}</span><b>${sign ? sign + ' ' : ''}${money(amt, cur)}</b></div>`;
+  const inMonth = (ts) => monthKey(ts) === m;
+  // Every entry behind each line, oldest first, with its date and time.
+  const tx = (type) => visibleTxns(S.txns.filter((x) => !x.deleted && x.type === type && x.currency === cur && inMonth(x.ts)), role(), S.me)
+    .sort((a, b) => a.ts - b.ts).map((x) => ({ ts: x.ts, icon: catOf(type, x.cat).icon, word: catOf(type, x.cat).name, amount: x.amount, note: x.note, by: x.by }));
+  const flows = loanFlows(S.loans, cur, true).filter((f) => inMonth(f.ts));
+  const lf = (test) => flows.filter(test).map((f) => ({ ts: f.ts, icon: forOf(f.loan.for).icon, word: who(f.loan.who), amount: f.amount, note: f.pay ? f.pay.note : f.loan.note }));
+  const rows = {
+    in: tx('in'), out: tx('out'),
+    loanPaid: lf((f) => f.pay && f.loan.dir === 'borrowed'),
+    lent: lf((f) => !f.pay && f.loan.dir === 'lent'),
+    repaid: lf((f) => f.pay && f.loan.dir === 'lent'),
+  };
+  const line = (key, ic, word, amt, sign, cls) => {
+    const list = rows[key] || [];
+    const open = list.length && V.cashOpen[key];
+    return `<button class="mline ${cls}" ${list.length ? `data-a="cashOpen" data-v="${key}"` : ''}><span>${ic} ${word}${list.length ? ` <small class="lbl">${faDigits(list.length)} ${open ? '▴' : '▾'}</small>` : ''}</span>
+        <b>${sign ? sign + ' ' : ''}${money(amt, cur)}</b></button>
+      ${open ? `<div class="msubs">${list.map((r) => `<div class="msub"><span>📅 ${dayLabel(r.ts)}</span><span class="grow">${r.icon} ${esc(r.word)}${r.note ? ` · 📝 ${esc(r.note)}` : ''}</span><b>${money(r.amount, cur)}</b></div>`).join('')}</div>` : ''}`;
+  };
   return `<div class="mcard">
     <div class="mtitle">💵 پول در دست — ${monthLabel(m)}</div>
-    ${line('↪️', c.opening >= 0 ? 'از ماه قبل' : 'کم از ماه قبل', Math.abs(c.opening), c.opening < 0 ? '−' : '', c.opening < 0 ? 'out-c' : '')}
-    ${line('⬇️', 'آمد این ماه', c.in, '+', 'in-c')}
-    ${line('⬆️', 'مصرف این ماه', c.out, '−', 'out-c')}
-    ${c.loanPaid ? line('🤝', 'قرض پس دادیم', c.loanPaid, '−', 'out-c') : ''}
-    ${c.lent ? line('📤', 'قرض دادیم', c.lent, '−', 'out-c') : ''}
-    ${c.repaid ? line('💵', 'قرض پس آوردند', c.repaid, '+', 'in-c') : ''}
+    <div class="mline ${c.opening < 0 ? 'out-c' : ''}"><span>↪️ ${c.opening >= 0 ? 'از ماه قبل' : 'کم از ماه قبل'}</span><b>${c.opening < 0 ? '− ' : ''}${money(Math.abs(c.opening), cur)}</b></div>
+    ${line('in', '⬇️', 'آمد این ماه', c.in, '+', 'in-c')}
+    ${line('out', '⬆️', 'مصرف این ماه', c.out, '−', 'out-c')}
+    ${c.loanPaid ? line('loanPaid', '🤝', 'قرض پس دادیم', c.loanPaid, '−', 'out-c') : ''}
+    ${c.lent ? line('lent', '📤', 'قرض دادیم', c.lent, '−', 'out-c') : ''}
+    ${c.repaid ? line('repaid', '💵', 'قرض پس آوردند', c.repaid, '+', 'in-c') : ''}
     <div class="mtotal ${c.closing >= 0 ? 'in-c' : 'out-c'}"><span>${c.closing >= 0 ? '🟢 باقی در دست' : '🔴 کم'}</span><b>${money(Math.abs(c.closing), cur)}</b></div>
     <div class="lbl" style="text-align:center">می‌رود به ماه بعد</div>
   </div>`;
@@ -667,9 +689,11 @@ function modalView() {
         ${keypad(M.feeMode ? M.fee || '' : M.amount, M.currency)}
         <div class="row" style="margin-top:12px;justify-content:center;gap:14px">
           <button class="iconbtn" data-a="txPhoto">${L(M.photo ? '✅' : '📷', 'عکس رسید')}</button>
+          <button class="iconbtn" data-a="txWhen">${L(M.when ? '✅' : '📅', M.when ? dayLabel(whenTs(M.when)) : M.ts ? dayLabel(M.ts) : 'الان')}</button>
           <button class="iconbtn" data-a="txNote">${L(M.note ? '✅' : '📝', 'یادداشت')}</button>
           <button class="iconbtn" data-a="txVoice" style="${M.recording ? 'background:var(--out)' : ''}">${L(M.recording ? '⏹️' : M.voice ? '✅' : '🎤', M.recording ? 'ایستاد' : 'صدا')}</button>
         </div>
+        ${M.whenOpen ? `<label class="notebox">📅<input id="txwhen" type="datetime-local" max="${localISO(Date.now())}" value="${esc(M.when || localISO(M.ts || Date.now()))}"></label>` : ''}
         ${M.noteOpen || M.note ? `<label class="notebox">📝<input id="txnote" maxlength="120" placeholder="یادداشت — چرا؟ (اختیاری)" value="${esc(M.note)}" autocomplete="off"></label>` : ''}
         ${M.photo ? `<img class="photo-prev" style="margin-top:10px;max-height:160px" ${mediaAttr(M.photo)} alt="">` : ''}
         <button class="save" data-a="txSave" ${+M.amount > 0 && !M.recording ? '' : 'disabled'}>✅ ثبت</button>`);
@@ -1094,7 +1118,7 @@ const A = {
       commit(() => {
         Object.assign(x, { cat: M.cat, amount: +M.amount, currency: M.currency, note: note || null, photo: M.photo || null, voice: M.voice || null,
           paidFrom: x.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null,
-          from: abroad ? M.from || null : null, country: abroad ? M.country || null : null, fee: abroad ? +M.fee || 0 : 0, editedBy: S.me, editedTs: Date.now() });
+          from: abroad ? M.from || null : null, country: abroad ? M.country || null : null, fee: abroad ? +M.fee || 0 : 0, editedBy: S.me, editedTs: Date.now(), ...(M.when ? { ts: whenTs(M.when) } : {}) });
         log('txEdit', '✏️' + catOf(x.type, x.cat).icon, `${was} → ${money(x.amount, x.currency)}`);
         V.modal = null;
       });
@@ -1102,7 +1126,7 @@ const A = {
       return;
     }
     const x = { id: uid(), type: M.type, cat: M.cat, amount: +M.amount, currency: M.currency, by: S.me,
-      ts: Date.now(), note: note || null, photo: M.photo || null, voice: M.voice || null, billId: M.billId || null,
+      ts: whenTs(M.when), note: note || null, photo: M.photo || null, voice: M.voice || null, billId: M.billId || null,
       paidFrom: M.type === 'out' && M.paidFrom === 'hand' ? 'hand' : null,
       ...(M.type === 'in' && M.cat === 'abroad' ? { from: M.from || null, country: M.country || null, fee: +M.fee || 0 } : {}) };
     commit(() => {
@@ -1113,12 +1137,14 @@ const A = {
     toast(M.type === 'in' ? '⬇️✅' : '⬆️✅');
   },
   txView: (v) => { V.modal = { kind: 'txView', id: v }; render(); },
+  txWhen: () => { const M = V.modal; M.note = (document.getElementById('txnote')?.value ?? M.note ?? '').trim(); M.whenOpen = true; render(); document.getElementById('txwhen')?.showPicker?.(); },
+  cashOpen: (v) => { V.cashOpen[v] = !V.cashOpen[v]; render(); },
   txEdit: (v) => {
     const x = S.txns.find((t) => t.id === v);
     if (!x || x.deleted) return;
     const go = () => {
       V.confirmTx = null;
-      V.modal = { kind: 'tx', editId: x.id, type: x.type, cat: x.cat, amount: String(x.amount), currency: x.currency, paidFrom: x.paidFrom || null,
+      V.modal = { kind: 'tx', editId: x.id, ts: x.ts, type: x.type, cat: x.cat, amount: String(x.amount), currency: x.currency, paidFrom: x.paidFrom || null,
         note: x.note || '', noteOpen: !!x.note, photo: x.photo || null, voice: x.voice || null, from: x.from || null, country: x.country || null, fee: x.fee ? String(x.fee) : '' };
       render();
     };
@@ -1178,8 +1204,9 @@ document.addEventListener('input', (e) => {
 });
 
 document.addEventListener('change', (e) => {
-  if (e.target.id !== 'ldate' || !V.modal) return;
-  V.modal.date = e.target.value || null; render();
+  if (!V.modal) return;
+  if (e.target.id === 'ldate') { V.modal.date = e.target.value || null; render(); }
+  if (e.target.id === 'txwhen') { V.modal.when = e.target.value || null; render(); }
 });
 
 document.addEventListener('click', (e) => {

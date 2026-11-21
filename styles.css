@@ -392,3 +392,8 @@ input.name:focus { border-color: var(--lapis); outline: none; }
 .mbox { background: #fff; border-radius: var(--r-sm); padding: 8px 4px; text-align: center; display: grid; gap: 2px; }
 .mbox .lab { font-size: 13px; color: var(--soft); }
 .mbox b { font-size: 16px; overflow-wrap: anywhere; }
+button.mline { width: 100%; text-align: start; }
+.msubs { display: grid; gap: 4px; padding: 6px 0 8px; border-bottom: 1px dashed var(--line); }
+.msub { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: var(--r-sm); background: var(--plaster); font-size: 14px; }
+.msub > span:first-child { white-space: nowrap; color: var(--soft); }
+.msub b { white-space: nowrap; font-size: 15px; }
