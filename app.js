@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, LOAN_FOR, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS
 import {
   monthKey, shiftMonth, monthLabel, totals, faDigits, money,
   roleOf, canTab, cashBalances, visibleTxns, loansView, jarTotals, abroadSummary,
-  monthCompare, jarsMonthNet, monthCash, loanLedger, loanStatement, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
+  monthCompare, jarsMonthNet, monthCash, loanLedger, loanStatement, loanTotals, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -146,7 +146,7 @@ function adminView() {
 function moneyView() {
   const m = monthKey(Date.now());
   const t = totals(S.txns, S.currency, m);
-  const c = monthCash(S.txns, S.loans, S.currency, m);
+  const c = monthCash(S.txns, [], S.currency, m);   // loans live on their own page
   const list = visibleTxns(S.txns.filter((x) => !x.deleted), role(), S.me).sort((a, b) => b.ts - a.ts).slice(0, 40);
   const hb = Object.entries(hands());
   return `<section>
@@ -158,9 +158,6 @@ function moneyView() {
       <div class="in-c">⬇️ ${money(t.in, S.currency)}<span class="lab">آمد این ماه</span></div>
       <div class="out-c">⬆️ ${money(t.out, S.currency)}<span class="lab">مصرف این ماه</span></div>
     </div>
-    ${c.loanIn || c.loanOut ? `<div class="sum">
-      <div class="in-c">🤝⬇️ ${money(c.loanIn, S.currency)}<span class="lab">قرض آمد</span></div>
-      <div class="out-c">🤝⬆️ ${money(c.loanOut, S.currency)}<span class="lab">قرض رفت</span></div></div>` : ''}
     <div class="sum">
       <div class="${c.opening >= 0 ? 'in-c' : 'out-c'}">↪️ ${signed(c.opening, S.currency)}<span class="lab">از ماه قبل</span></div>
       <div class="${c.closing >= 0 ? 'in-c' : 'out-c'}">${c.closing >= 0 ? '🟢' : '🔴'} ${money(Math.abs(c.closing), S.currency)}<span class="lab">${c.closing >= 0 ? 'باقی' : 'کم'} — می‌رود به ماه بعد</span></div>
@@ -210,16 +207,26 @@ function loansViewUI() {
         <span class="lbl">${forOf(l.for).icon} ${forOf(l.for).name} · ${esc(c?.name)} · ${l.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dateLabel(l.ts, l.noTime)}</span>${l.note ? `<br><span class="note">📝 ${esc(l.note)}</span>` : ''}</span>
       ${face(member(l.by), 'f24')}</button>`;
   };
+  // Earners see their own loans; admin sees the whole family's.
+  const T = loanTotals(isAdmin() ? S.loans : S.loans.filter((r) => r.kind === 'pay' || r.by === S.me), S.currency);
+  const box = (t, lent) => `<div class="stmt-sum">
+      <div><span class="lab">کل</span><b>${money(t.total, S.currency)}</b></div>
+      <div><span class="lab">${lent ? 'پس آوردند' : 'پس دادیم'}</span><b>${money(t.paid, S.currency)}</b></div>
+      <div class="${t.left ? (lent ? 'in-c' : 'out-c') : 'in-c'}"><span class="lab">باقی</span><b>${t.left ? money(t.left, S.currency) : '✅'}</b></div></div>`;
+  const line = (t, lent) => !t.total ? '' : `<div class="pl ${lent ? 'in-c' : 'out-c'}">${lent ? '📤 دادیم' : '📥 گرفتیم'} ${money(t.total, S.currency)}
+      <span class="lbl">· ${lent ? 'پس آورد' : 'پس دادیم'} ${money(t.paid, S.currency)} ·</span> <b>${t.left ? `باقی ${money(t.left, S.currency)}` : '✅ صاف'}</b></div>`;
+  const totals = T.people.length ? `
+    <div class="stmt"><div class="stmt-head">📥 قرض گرفتیم</div>${box(T.borrowed, false)}</div>
+    <div class="stmt"><div class="stmt-head">📤 قرض دادیم</div>${box(T.lent, true)}</div>
+    <div class="stmt"><div class="stmt-head">👥 هر نفر</div>${T.people.map((p) => `<div class="prow">${face(contact(p.who), 'f40')}
+      <div class="grow"><b>${who(p.who) || '—'}</b>${line(p.borrowed, false)}${line(p.lent, true)}</div></div>`).join('')}</div>` : '';
   return `<section>
-    <div class="sum">
-      <div class="in-c">📤 ${money(v.open.lent, S.currency)}<br><small class="lbl">بالای مردم</small></div>
-      <div class="out-c">📥 ${money(v.open.borrowed, S.currency)}<br><small class="lbl">بالای ما</small></div>
-    </div>
-    <div class="bigbtns" style="margin-top:12px">
+    <div class="bigbtns">
       <button class="big in" data-a="loanNew" data-v="lent">📤<small>قرض دادیم</small></button>
       <button class="big out" data-a="loanNew" data-v="borrowed">📥<small>قرض گرفتیم</small></button>
     </div>
     <div class="row" style="margin-top:8px;justify-content:flex-end">${curSwitch()}</div>
+    <div style="margin-top:12px">${totals}</div>
     ${isAdmin() ? '<button class="save" style="background:var(--sel)" data-a="room" data-v="loanBook">🤝📒 دفتر قرض — همه با تاریخ</button>' : ''}
   </section>
   <section class="list">${v.loans.length ? [...v.loans.filter((l) => !l.done), ...v.loans.filter((l) => l.done)].map(row).join('') : '<div class="empty">🤝</div>'}</section>`;
@@ -278,8 +285,8 @@ function loanBookView() {
 function reportView() {
   V.month ||= monthKey(Date.now());
   const t = totals(S.txns, S.currency, V.month);
-  const c = monthCash(S.txns, S.loans, S.currency, V.month);
-  const max = Math.max(t.in, t.out, c.loanIn, c.loanOut, Math.abs(c.opening), Math.abs(c.closing), 1);
+  const c = monthCash(S.txns, [], S.currency, V.month);
+  const max = Math.max(t.in, t.out, Math.abs(c.opening), Math.abs(c.closing), 1);
   const bar = (ic, v, color, mx = max) => `<div class="bar"><span class="ic">${ic}</span>
     <span class="track"><span class="fill" style="display:block;width:${(v / mx) * 100}%;background:${color}"></span></span>
     <span class="v">${money(v, S.currency)}</span></div>`;
@@ -299,7 +306,6 @@ function reportView() {
     <div class="card"><div class="bars">
       ${bar(L('↪️', c.opening >= 0 ? 'از ماه قبل' : 'کم از ماه قبل'), Math.abs(c.opening), c.opening >= 0 ? 'var(--in)' : 'var(--out)')}
       ${bar(L('⬇️', 'آمد'), t.in, 'var(--in)')}${bar(L('⬆️', 'مصرف'), t.out, 'var(--out)')}
-      ${c.loanIn || c.loanOut ? bar(L('🤝⬇️', 'قرض آمد'), c.loanIn, 'var(--in)') + bar(L('🤝⬆️', 'قرض رفت'), c.loanOut, 'var(--out)') : ''}
       ${bar(c.closing >= 0 ? L('🟢', 'باقی به ماه بعد') : L('🔴', 'کم به ماه بعد'), Math.abs(c.closing), c.closing >= 0 ? 'var(--in)' : 'var(--out)')}
     </div></div>
     <div class="card"><h3>⬆️ 🧩 مصرف به کدام چیز</h3><div class="bars">
@@ -555,13 +561,13 @@ function modalView() {
     case 'summary': {
       V.month ||= monthKey(Date.now());
       const t = totals(S.txns, S.currency, V.month);
-      const c = monthCash(S.txns, S.loans, S.currency, V.month);
+      const c = monthCash(S.txns, [], S.currency, V.month);
       const pages = [
         () => { const mx = Math.max(t.in, t.out, 1); const b = (ic, v, col) => `<div class="bar"><span class="ic">${ic}</span>
             <span class="track"><span class="fill" style="display:block;width:${(v / mx) * 100}%;background:${col}"></span></span>
             <span class="v">${money(v, S.currency)}</span></div>`;
           return `<div class="slide-t">${monthLabel(V.month)}<span class="lab">آمد، مصرف و باقی</span></div><div class="bars">${b('⬇️', t.in, 'var(--in)')}${b('⬆️', t.out, 'var(--out)')}</div>
-            <div class="lbl" style="text-align:center">↪️ از ماه قبل: ${signed(c.opening, S.currency)}${c.loanIn || c.loanOut ? ` · 🤝⬇️ ${money(c.loanIn, S.currency)} · 🤝⬆️ ${money(c.loanOut, S.currency)}` : ''}</div>
+            <div class="lbl" style="text-align:center">↪️ از ماه قبل: ${signed(c.opening, S.currency)}</div>
             <div class="slide-big ${c.closing >= 0 ? 'in-c' : 'out-c'}">${c.closing >= 0 ? '🟢' : '🔴'} ${money(Math.abs(c.closing), S.currency)}</div>`; },
         () => `<div class="slide-t">⬆️ 🧩<span class="lab">مصرف به کدام چیز (این ماه / ماه قبل)</span></div><div class="list">${monthCompare(S.txns, S.currency, V.month).slice(0, 5).map((r) => {
             const arrow = r.now > r.prev ? '<span class="out-c">⬆️</span>' : r.now < r.prev ? '<span class="in-c">⬇️</span>' : '🟰';
@@ -866,7 +872,7 @@ const A = {
     { name: rawName, forName: (id) => [forOf(id).icon, forOf(id).name], date: dateLabel })),
   waReport: () => {
     V.month ||= monthKey(Date.now());
-    sendWhatsApp(reportText({ txns: S.txns, currency: S.currency, month: V.month, person: rawName, cash: monthCash(S.txns, S.loans, S.currency, V.month),
+    sendWhatsApp(reportText({ txns: S.txns, currency: S.currency, month: V.month, person: rawName, cash: monthCash(S.txns, [], S.currency, V.month),
       cat: (id) => { const c = findCat(BASE_CATS, S.cats || [], 'out', id); return [c.icon, c.name]; } }));
   },
   txFrom: (v) => { V.modal.paidFrom = v === 'hand' ? 'hand' : null; render(); },

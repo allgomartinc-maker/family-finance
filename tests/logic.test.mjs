@@ -391,7 +391,7 @@ test('bottom bar: front places for everyone, one admin door last (admin only)', 
 });
 
 // ---------- loan book + month carry-over ----------
-import { loanFlows, monthCash, loanLedger, loanStatement, ledgerText } from '../logic.js';
+import { loanFlows, monthCash, loanLedger, loanStatement, loanTotals, ledgerText } from '../logic.js';
 
 const AQRAB = d('2026-11-13'), MIZAN = d('2026-10-10'), QAWS = d('2026-12-10');
 const LOANS = [
@@ -466,4 +466,12 @@ test('reportText with cash: shows carry-in, loan money and what goes to next mon
   assert.match(t, /↪️ از ماه قبل: − /);
   assert.match(t, /🤝 قرض آمد/);
   assert.match(t, /🟢 باقی: .* \(به ماه بعد\)/);
+});
+
+test('loanTotals: borrowed and lent each have total · paid · left, overall and per person', () => {
+  const t = loanTotals(LOANS, 'AFN');
+  assert.deepEqual(t.borrowed, { total: 10000, paid: 5000, left: 5000 });
+  assert.deepEqual(t.lent, { total: 4000, paid: 4000, left: 0 });
+  assert.deepEqual(t.people.map((p) => [p.who, p.borrowed.left, p.lent.total]), [['c1', 5000, 0], ['c2', 0, 4000]]);
+  assert.deepEqual(loanTotals(LOANS, 'USD').lent, { total: 500, paid: 0, left: 500 });
 });

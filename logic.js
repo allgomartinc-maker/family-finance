@@ -203,6 +203,21 @@ export function loanLedger(records, currency) {
   return { people, total };
 }
 
+// Loans tab sums, each direction on its own: total · paid back · left, overall and per person.
+export function loanTotals(records, currency) {
+  const zero = () => ({ total: 0, paid: 0, left: 0 });
+  const all = { borrowed: zero(), lent: zero() };
+  const P = {};
+  for (const l of records) {
+    if (l.kind !== 'loan' || l.deleted || l.currency !== currency) continue;
+    const st = loanStatement(records, l.id);
+    const p = (P[l.who] ||= { who: l.who, borrowed: zero(), lent: zero() });
+    for (const t of [all[l.dir], p[l.dir]]) { t.total += st.total; t.paid += st.paid; t.left += st.left; }
+  }
+  const people = Object.values(P).sort((a, b) => (b.borrowed.left + b.lent.left) - (a.borrowed.left + a.lent.left));
+  return { ...all, people };
+}
+
 // name(id) → person's name · forName(id) → [icon, name] · date(ts, noTime) → date text
 export function ledgerText(ledger, currency, { name, forName, date }) {
   const m = (n) => money(n, currency);

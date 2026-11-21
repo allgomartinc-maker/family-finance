@@ -371,3 +371,6 @@ input.name:focus { border-color: var(--lapis); outline: none; }
 .mini { padding: 6px 14px; border-radius: var(--r-sm); background: var(--card); font-size: 16px; font-weight: 700; box-shadow: var(--shadow); }
 .mini.danger { background: var(--anar); color: #fff; }
 .forbtn { display: block; width: 100%; padding: 6px; border-radius: var(--r-sm); background: var(--saffron-soft); }
+.prow { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+.prow:first-of-type { border-top: 0; }
+.prow .pl { font-size: 15px; font-weight: 700; margin-top: 2px; }
