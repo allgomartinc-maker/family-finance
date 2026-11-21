@@ -1,16 +1,16 @@
 import { load, save, uid, loadPocket, savePocket } from './store.js';
-import { OUT_CATS, IN_CATS, BILL_KINDS, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS } from './data.js';
+import { OUT_CATS, IN_CATS, LOAN_FOR, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS } from './data.js';
 import {
-  monthKey, shiftMonth, monthLabel, totals, billStatus, faDigits, money,
+  monthKey, shiftMonth, monthLabel, totals, faDigits, money,
   roleOf, canTab, cashBalances, visibleTxns, loansView, jarTotals, abroadSummary,
-  monthCompare, jarsMonthNet, billsMonth, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
+  monthCompare, jarsMonthNet, monthCash, loanLedger, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
 import { makePin, checkPin, PIN_LEN, PIN_KEYS } from './pin.js';
 
 let S;                                   // family state (IndexedDB)
-const V = { room: null, tab: 'money', edit: false, month: null, modal: null, cloud: null, waiting: false };
+const V = { room: null, tab: 'money', month: null, modal: null, cloud: null, waiting: false };
 let SY = null;                           // sync handle when Firebase is set up
 const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
@@ -31,8 +31,8 @@ const isAdmin = () => me()?.role === 'admin';
 const role = () => roleOf(me());
 const ROLE_ICON = { admin: '👑', earner: '💰' };
 const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور' };
-const TAB_NAME = { money: 'پول', loans: 'قرض', bills: 'بل‌ها', admin: 'مدیر' };
-const TAB_ICON = { money: '💰', loans: '🤝', bills: '🧾', admin: '🗝️' };
+const TAB_NAME = { money: 'پول', loans: 'قرض', admin: 'مدیر' };
+const TAB_ICON = { money: '💰', loans: '🤝', admin: '🗝️' };
 // Picture + its Dari word underneath: people who read can read it and teach the picture to those who can't.
 const L = (icon, word) => `${icon}<span class="lab">${word}</span>`;
 const who = (id) => esc(member(id)?.name || contact(id)?.name || '');
@@ -51,6 +51,22 @@ const face = (m, size = 'f40') => !m ? `<span class="face ${size}">❔</span>`
 const BASE_CATS = { in: IN_CATS, out: OUT_CATS };
 const catOf = (type, id) => { const c = findCat(BASE_CATS, S.cats || [], type, id); return { ...c, icon: esc(c.icon), name: esc(c.name) }; };
 const dayLabel = (ts) => new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long' }).format(ts);
+const dateLabel = (ts) => new Intl.DateTimeFormat('fa-AF', { day: 'numeric', month: 'long', year: 'numeric' }).format(ts);
+const signed = (n, cur) => `${n < 0 ? '− ' : ''}${money(Math.abs(n), cur)}`;
+const forOf = (id) => LOAN_FOR.find((f) => f.id === id) || LOAN_FOR[LOAN_FOR.length - 1];
+// Loans and payments: 📝 note and 📅 date (today unless an older date is picked, for old debts).
+const todayISO = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+const pickTs = (iso) => { if (!iso || iso >= todayISO()) return Date.now(); const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d, 12).getTime(); };
+const backdated = (M) => M.date && M.date < todayISO();
+const loanExtras = (M) => `<div class="row" style="margin-top:12px;justify-content:center;gap:14px">
+    <button class="iconbtn" data-a="lNote">${L(M.note ? '✅' : '📝', 'یادداشت')}</button>
+    <button class="iconbtn" data-a="lDate">${L(backdated(M) ? '✅' : '📅', backdated(M) ? dateLabel(pickTs(M.date)) : 'امروز')}</button></div>
+  ${M.noteOpen || M.note ? `<label class="notebox">📝<input id="lnote" maxlength="120" placeholder="یادداشت — برای چه؟ (اختیاری)" value="${esc(M.note)}" autocomplete="off"></label>` : ''}
+  ${M.dateOpen ? `<label class="notebox">📅<input id="ldate" type="date" max="${todayISO()}" value="${esc(M.date || todayISO())}"></label>` : ''}`;
+const readLoanExtras = (M) => {
+  M.note = (document.getElementById('lnote')?.value ?? M.note ?? '').trim().slice(0, 120);
+  M.date = document.getElementById('ldate')?.value || M.date || null;
+};
 
 function toast(t) {
   const el = Object.assign(document.createElement('div'), { className: 'toast', textContent: t });
@@ -113,22 +129,20 @@ const ROOMS = [
   ['report', '📊', 'گزارش ماه'],
   ['people', '👨‍👩‍👧', 'اعضای فامیل'],
   ['invite', '📲', 'دعوت به فامیل'],
-  ['editBills', '🧾✏️', 'تغییر بل‌ها'],
+  ['loanBook', '🤝📒', 'دفتر قرض'],
   ['summary', '📅', 'خلاصه برای فامیل'],
 ];
 const backBar = (label) => `<button class="backbar" data-a="roomBack">↩️ <span>${label}</span></button>`;
 function adminView() {
   if (V.room === 'report') return backBar('مدیر') + reportView();
+  if (V.room === 'loanBook') return backBar('مدیر') + loanBookView();
   return `<section><div class="rooms">${ROOMS.filter(([id]) => id !== 'invite' || SY).map(([id, i, n]) =>
     `<button class="room" data-a="room" data-v="${id}"><span class="pic">${i}</span><b>${n}</b></button>`).join('')}</div></section>`;
 }
-function editBar() {
-  return V.edit ? `<div class="editbar"><span>✏️ <b>حالت تغییر</b></span><button data-a="editDone">✅ تمام</button></div>` : '';
-}
-
 function moneyView() {
   const m = monthKey(Date.now());
   const t = totals(S.txns, S.currency, m);
+  const c = monthCash(S.txns, S.loans, S.currency, m);
   const list = visibleTxns(S.txns.filter((x) => !x.deleted), role(), S.me).sort((a, b) => b.ts - a.ts).slice(0, 40);
   const hb = Object.entries(hands());
   return `<section>
@@ -139,6 +153,13 @@ function moneyView() {
     <div class="sum">
       <div class="in-c">⬇️ ${money(t.in, S.currency)}<span class="lab">آمد این ماه</span></div>
       <div class="out-c">⬆️ ${money(t.out, S.currency)}<span class="lab">مصرف این ماه</span></div>
+    </div>
+    ${c.loanIn || c.loanOut ? `<div class="sum">
+      <div class="in-c">🤝⬇️ ${money(c.loanIn, S.currency)}<span class="lab">قرض آمد</span></div>
+      <div class="out-c">🤝⬆️ ${money(c.loanOut, S.currency)}<span class="lab">قرض رفت</span></div></div>` : ''}
+    <div class="sum">
+      <div class="${c.opening >= 0 ? 'in-c' : 'out-c'}">↪️ ${signed(c.opening, S.currency)}<span class="lab">از ماه قبل</span></div>
+      <div class="${c.closing >= 0 ? 'in-c' : 'out-c'}">${c.closing >= 0 ? '🟢' : '🔴'} ${money(Math.abs(c.closing), S.currency)}<span class="lab">${c.closing >= 0 ? 'باقی' : 'کم'} — می‌رود به ماه بعد</span></div>
     </div>
     <div class="row" style="margin-top:8px"><span class="lbl grow">${monthLabel(m)}</span>${curSwitch()}</div>
     <div class="chips" style="margin-top:10px">
@@ -162,26 +183,6 @@ const txRow = (x) => `<button class="tx ${x.deleted ? 'del' : ''}" data-a="txVie
   ${x.paidFrom === 'hand' ? '🤲' : ''}${x.photo ? '📷' : ''}${x.voice ? '🎤' : ''} ${face(member(x.by), 'f40')}
 </button>`;
 
-function billsView() {
-  const now = Date.now();
-  const st = { paid: '✅', due: '⏳', late: '❗', ok: '' };
-  const tiles = S.bills.filter((b) => !b.deleted).map((b) => {
-    const s = billStatus(b, S.txns, now);
-    const k = BILL_KINDS.find((c) => c.id === b.kind) || { icon: '❓' };
-    return `<button class="bill ${s}" data-a="${V.edit ? 'rmBill' : 'payBill'}" data-v="${b.id}">
-      ${V.edit ? '<span class="xbtn">✖</span>' : ''}
-      <span class="pic">${k.icon}</span><b>${k.name || ''}</b><span class="st">${st[s]}</span>
-      <small class="muted">${{ paid: 'پرداخت شد', due: 'نزدیک است', late: 'دیر شده', ok: '' }[s]}</small>
-      <small class="muted">📅 روز ${faDigits(b.dueDay)}</small></button>`;
-  }).join('');
-  return `<section><div class="grid">${tiles}
-    ${V.edit ? `<button class="tile add" data-a="newBill"><span class="pic">➕</span><small>بل نو</small></button>
-      <button class="tile add" data-a="editDone"><span class="pic">✅</span><small>تمام</small></button>` : ''}
-  </div>
-  ${S.bills.length ? '' : '<div class="empty">🧾</div>'}
-  <p class="lbl" style="margin-top:18px">✅ پرداخت شده · ⏳ نزدیک · ❗ دیر شده</p></section>`;
-}
-
 function jarsRow() {
   const jars = S.jars.filter((j) => j.kind === 'jar' && !j.deleted && j.currency === S.currency);
   const t = jarTotals(S.jars);
@@ -202,7 +203,7 @@ function loansViewUI() {
       <span class="cat">${l.dir === 'lent' ? '📤' : '📥'}</span>${face(c, 'f40')}
       <span class="grow" style="text-align:start">
         <span class="amt ${l.dir === 'lent' ? 'in-c' : 'out-c'}">${l.done ? '✅' : money(l.left, l.currency)}</span><br>
-        <span class="lbl">${esc(c?.name)} · ${l.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dayLabel(l.ts)}</span></span>
+        <span class="lbl">${forOf(l.for).icon} ${forOf(l.for).name} · ${esc(c?.name)} · ${l.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dateLabel(l.ts)}</span>${l.note ? `<br><span class="note">📝 ${esc(l.note)}</span>` : ''}</span>
       ${face(member(l.by), 'f24')}</button>`;
   };
   return `<section>
@@ -215,14 +216,49 @@ function loansViewUI() {
       <button class="big out" data-a="loanNew" data-v="borrowed">📥<small>قرض گرفتیم</small></button>
     </div>
     <div class="row" style="margin-top:8px;justify-content:flex-end">${curSwitch()}</div>
+    ${isAdmin() ? '<button class="save" style="background:var(--sel)" data-a="room" data-v="loanBook">🤝📒 دفتر قرض — همه با تاریخ</button>' : ''}
   </section>
   <section class="list">${v.loans.length ? [...v.loans.filter((l) => !l.done), ...v.loans.filter((l) => l.done)].map(row).join('') : '<div class="empty">🤝</div>'}</section>`;
+}
+
+// Every amount we got from / gave to each person, with dates, and what is still open (admin).
+const LEDGER_KIND = {
+  borrowed: ['📥', 'قرض گرفتیم', 'in-c'], lent: ['📤', 'قرض دادیم', 'out-c'],
+  payOut: ['💵', 'ما پس دادیم', 'out-c'], payIn: ['💵', 'پس آورد', 'in-c'],
+};
+function loanBookView() {
+  const L0 = loanLedger(S.loans, S.currency);
+  const person = (p) => `<div class="card">
+    <div class="row">${face(contact(p.who), 'f56')}<b class="grow" style="font-size:22px">${who(p.who) || '—'}</b></div>
+    <div class="sum" style="margin-top:8px">
+      <div class="in-c">⬇️ ${money(p.got, S.currency)}<span class="lab">از او گرفتیم</span></div>
+      <div class="out-c">⬆️ ${money(p.gave, S.currency)}<span class="lab">به او دادیم</span></div></div>
+    <div class="list" style="margin-top:10px">${p.rows.map((r) => { const [ic, word, col] = LEDGER_KIND[r.kind]; const f = forOf(r.for);
+      return `<div class="tx"><span class="cat">${ic}</span><span class="grow" style="text-align:start">
+        <span class="amt ${col}">${money(r.amount, S.currency)}</span> <span class="lbl">${word}</span><br>
+        <span class="lbl">${dateLabel(r.ts)} · ${f.icon} ${f.name}</span>${r.note ? `<br><span class="note">📝 ${esc(r.note)}</span>` : ''}</span></div>`; }).join('')}</div>
+    <div class="row" style="margin-top:10px;font-size:20px;font-weight:700">
+      ${p.theyOwe ? `<span class="in-c">➡️ بالای او: ${money(p.theyOwe, S.currency)}</span>` : ''}
+      ${p.weOwe ? `<span class="out-c">⬅️ بالای ما: ${money(p.weOwe, S.currency)}</span>` : ''}
+      ${!p.theyOwe && !p.weOwe ? '<span>✅ حساب صاف</span>' : ''}</div></div>`;
+  return `<section>
+    <div class="row" style="justify-content:center;margin-bottom:12px">${curSwitch()}</div>
+    <div class="sum" style="margin-top:0">
+      <div class="in-c">📤 ${money(L0.total.theyOwe, S.currency)}<span class="lab">بالای مردم</span></div>
+      <div class="out-c">📥 ${money(L0.total.weOwe, S.currency)}<span class="lab">بالای ما</span></div></div>
+    <div class="sum">
+      <div class="in-c">⬇️ ${money(L0.total.got, S.currency)}<span class="lab">همه گرفتیم</span></div>
+      <div class="out-c">⬆️ ${money(L0.total.gave, S.currency)}<span class="lab">همه دادیم</span></div></div>
+    ${L0.people.length ? '<button class="save wa" style="margin:12px 0" data-a="waLedger">💬 فرستادن دفتر قرض به واتساپ</button>' : ''}
+    ${L0.people.map(person).join('') || '<div class="empty">🤝</div>'}
+  </section>`;
 }
 
 function reportView() {
   V.month ||= monthKey(Date.now());
   const t = totals(S.txns, S.currency, V.month);
-  const max = Math.max(t.in, t.out, 1);
+  const c = monthCash(S.txns, S.loans, S.currency, V.month);
+  const max = Math.max(t.in, t.out, c.loanIn, c.loanOut, Math.abs(c.opening), Math.abs(c.closing), 1);
   const bar = (ic, v, color, mx = max) => `<div class="bar"><span class="ic">${ic}</span>
     <span class="track"><span class="fill" style="display:block;width:${(v / mx) * 100}%;background:${color}"></span></span>
     <span class="v">${money(v, S.currency)}</span></div>`;
@@ -240,8 +276,10 @@ function reportView() {
     </div>
     <div class="row" style="justify-content:center;margin-bottom:12px">${curSwitch()}</div>
     <div class="card"><div class="bars">
+      ${bar(L('↪️', c.opening >= 0 ? 'از ماه قبل' : 'کم از ماه قبل'), Math.abs(c.opening), c.opening >= 0 ? 'var(--in)' : 'var(--out)')}
       ${bar(L('⬇️', 'آمد'), t.in, 'var(--in)')}${bar(L('⬆️', 'مصرف'), t.out, 'var(--out)')}
-      ${bar(t.net >= 0 ? L('🟢', 'باقی') : L('🔴', 'کم'), Math.abs(t.net), t.net >= 0 ? 'var(--in)' : 'var(--out)')}
+      ${c.loanIn || c.loanOut ? bar(L('🤝⬇️', 'قرض آمد'), c.loanIn, 'var(--in)') + bar(L('🤝⬆️', 'قرض رفت'), c.loanOut, 'var(--out)') : ''}
+      ${bar(c.closing >= 0 ? L('🟢', 'باقی به ماه بعد') : L('🔴', 'کم به ماه بعد'), Math.abs(c.closing), c.closing >= 0 ? 'var(--in)' : 'var(--out)')}
     </div></div>
     <div class="card"><h3>⬆️ 🧩 مصرف به کدام چیز</h3><div class="bars">
       ${cats.length ? cats.map(([c, v]) => bar(L(catOf('out', c).icon, catOf('out', c).name), v, 'var(--out)', cmax)).join('') : '<div class="muted">—</div>'}
@@ -291,14 +329,13 @@ function sheetTitle(M) {
       return (M.type === 'in' ? 'پول آمد' : 'مصرف') + (M.cat ? ' — ' + catOf(M.type, M.cat).name : ' — برای چه؟');
     case 'txView': { const x = S.txns.find((t) => t.id === M.id); return x ? catOf(x.type, x.cat).name : ''; }
     case 'catNew': return M.type === 'in' ? 'نوع نو برای پول آمد' : 'نوع نو برای مصرف';
-    case 'bill': return M.kindId ? 'روز پرداخت در ماه' : 'بل نو — کدام بل؟';
     case 'give': return M.to ? 'خرچی برای ' + nm(M.to) : 'خرچی — به کی؟';
     case 'hand': return 'خرچی در دست ' + nm(M.id);
     case 'return': return 'پس دادن باقی پول';
     case 'contact': return 'شخص نو';
-    case 'loanNew': return (M.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم') + (M.who ? ' — ' + nm(M.who) : ' — به/از کی؟');
+    case 'loanNew': return (M.dir === 'lent' ? 'قرض دادیم' : 'قرض گرفتیم') + (!M.who ? ' — به/از کی؟' : !M.for ? ' — برای چه؟' : ' — ' + nm(M.who));
     case 'loan': { const l = S.loans.find((r) => r.id === M.id); return 'قرض ' + nm(l?.who); }
-    case 'loanPay': return 'پرداخت قرض';
+    case 'loanPay': { const l = S.loans.find((r) => r.id === M.id); return (l?.dir === 'lent' ? 'پس آورد — ' : 'ما پس دادیم — ') + nm(l?.who); }
     case 'jarNew': return M.goal ? 'هدف پس‌انداز — چقدر؟' : 'پس‌انداز نو — برای چه؟';
     case 'jar': return 'پس‌انداز ' + goalOf(S.jars.find((r) => r.id === M.id)?.goal).name;
     case 'jarMove': return M.dir === 'in' ? 'گذاشتن در پس‌انداز' : 'برداشتن از پس‌انداز';
@@ -398,11 +435,16 @@ function modalView() {
     case 'loanNew': {
       const head = M.dir === 'lent' ? '📤' : '📥';
       if (!M.who) return sheet(`${head} 👤❓`, contactGrid('loanWho'));
-      return sheet(`${head} ${face(contact(M.who), 'f40')}`, `
+      if (!M.for) {
+        return sheet(`${head} ${face(contact(M.who), 'f40')} ❓`, `<div class="grid">${LOAN_FOR.map((f) =>
+          `<button class="tile" data-a="loanFor" data-v="${f.id}"><span class="pic">${f.icon}</span><small>${f.name}</small></button>`).join('')}</div>`);
+      }
+      return sheet(`${head} ${face(contact(M.who), 'f40')} ${forOf(M.for).icon}`, `
         <div class="row" style="margin-bottom:10px;justify-content:center"><div class="seg cur" style="width:190px">
           <button data-a="txCur" data-v="AFN" class="${M.currency === 'AFN' ? 'on' : ''}" style="font-size:26px">افغانی</button>
           <button data-a="txCur" data-v="USD" class="${M.currency === 'USD' ? 'on' : ''}" style="font-size:26px">دالر</button></div></div>
         ${keypad(M.amount, M.currency)}
+        ${loanExtras(M)}
         <button class="save" data-a="loanSave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     }
     case 'loan': {
@@ -412,14 +454,18 @@ function modalView() {
       const canEdit = isAdmin() || l.by === S.me;
       return sheet(`${l.dir === 'lent' ? '📤' : '📥'} ${face(contact(l.who), 'f40')}`, `
         <div class="display ${l.dir === 'lent' ? 'in-c' : 'out-c'}">${l.done ? '✅' : money(l.left, l.currency)}</div>
-        <div class="lbl" style="text-align:center;margin-top:6px">${money(l.amount, l.currency)} · ${dayLabel(l.ts)}</div>
-        <div class="list" style="margin-top:10px">${pays.map((p) => `<div class="tx"><span class="cat">💵</span>
-          <span class="grow amt">${money(p.amount, l.currency)}</span>${face(member(p.by), 'f24')}<span class="lbl">${dayLabel(p.ts)}</span></div>`).join('')}</div>
+        <div class="lbl" style="text-align:center;margin-top:6px">${l.dir === 'lent' ? '📤 قرض دادیم' : '📥 قرض گرفتیم'} ${money(l.amount, l.currency)} · ${dateLabel(l.ts)}</div>
+        <div class="lbl" style="text-align:center;margin-top:4px;font-size:20px">${forOf(l.for).icon} ${forOf(l.for).name}</div>
+        ${l.note ? `<div class="card notecard">📝 ${esc(l.note)}</div>` : ''}
+        ${pays.length ? `<div class="lbl" style="margin-top:10px">💵 ${l.dir === 'lent' ? 'پس آورد' : 'ما پس دادیم'}: ${money(l.paid, l.currency)}</div>` : ''}
+        <div class="list" style="margin-top:6px">${pays.map((p) => `<div class="tx"><span class="cat">💵</span>
+          <span class="grow" style="text-align:start"><span class="amt">${money(p.amount, l.currency)}</span><br><span class="lbl">${dateLabel(p.ts)}</span>${p.note ? `<br><span class="note">📝 ${esc(p.note)}</span>` : ''}</span>${face(member(p.by), 'f24')}</div>`).join('')}</div>
         ${canEdit && !l.done ? '<button class="save" data-a="loanPayStart">💵 پرداخت قرض</button>' : ''}
         ${canEdit ? '<button class="save danger" data-a="loanDel">🗑️ پاک کردن</button>' : ''}`);
     }
     case 'loanPay':
       return sheet('💵', `${keypad(M.amount, M.currency)}
+        ${loanExtras(M)}
         <button class="save" data-a="loanPaySave" ${+M.amount > 0 ? '' : 'disabled'}>✅ ثبت</button>`);
     case 'jarNew':
       if (!M.goal) {
@@ -474,12 +520,14 @@ function modalView() {
     case 'summary': {
       V.month ||= monthKey(Date.now());
       const t = totals(S.txns, S.currency, V.month);
+      const c = monthCash(S.txns, S.loans, S.currency, V.month);
       const pages = [
         () => { const mx = Math.max(t.in, t.out, 1); const b = (ic, v, col) => `<div class="bar"><span class="ic">${ic}</span>
             <span class="track"><span class="fill" style="display:block;width:${(v / mx) * 100}%;background:${col}"></span></span>
             <span class="v">${money(v, S.currency)}</span></div>`;
           return `<div class="slide-t">${monthLabel(V.month)}<span class="lab">آمد، مصرف و باقی</span></div><div class="bars">${b('⬇️', t.in, 'var(--in)')}${b('⬆️', t.out, 'var(--out)')}</div>
-            <div class="slide-big ${t.net >= 0 ? 'in-c' : 'out-c'}">${t.net >= 0 ? '🟢' : '🔴'} ${money(Math.abs(t.net), S.currency)}</div>`; },
+            <div class="lbl" style="text-align:center">↪️ از ماه قبل: ${signed(c.opening, S.currency)}${c.loanIn || c.loanOut ? ` · 🤝⬇️ ${money(c.loanIn, S.currency)} · 🤝⬆️ ${money(c.loanOut, S.currency)}` : ''}</div>
+            <div class="slide-big ${c.closing >= 0 ? 'in-c' : 'out-c'}">${c.closing >= 0 ? '🟢' : '🔴'} ${money(Math.abs(c.closing), S.currency)}</div>`; },
         () => `<div class="slide-t">⬆️ 🧩<span class="lab">مصرف به کدام چیز (این ماه / ماه قبل)</span></div><div class="list">${monthCompare(S.txns, S.currency, V.month).slice(0, 5).map((r) => {
             const arrow = r.now > r.prev ? '<span class="out-c">⬆️</span>' : r.now < r.prev ? '<span class="in-c">⬇️</span>' : '🟰';
             return `<div class="tx"><span class="cat">${L(catOf('out', r.cat).icon, catOf('out', r.cat).name)}</span><span class="grow amt">${money(r.now, S.currency)}</span>
@@ -489,9 +537,6 @@ function modalView() {
         () => { const l = loansView(S.loans, S.currency);
           return `<div class="slide-t">🤝<span class="lab">قرض</span></div><div class="sum"><div class="in-c">📤 ${money(l.open.lent, S.currency)}</div>
             <div class="out-c">📥 ${money(l.open.borrowed, S.currency)}</div></div>`; },
-        () => { const b = billsMonth(S.bills, S.txns, Date.now());
-          return `<div class="slide-t">🧾<span class="lab">بل‌ها پرداخت شده</span></div><div class="slide-big">✅ ${faDigits(b.paid)} / ${faDigits(b.total)}</div>
-            ${b.late ? `<div class="slide-big out-c">❗ ${faDigits(b.late)}</div>` : ''}`; },
       ];
       const i = Math.max(0, Math.min(pages.length - 1, M.page));
       return sheet('👨‍👩‍👧 📅', `<div class="slide">${pages[i]()}</div>
@@ -570,13 +615,6 @@ function modalView() {
         ${x.deleted && isAdmin() ? '<button class="save" data-a="txRestore">↩️ دوباره آوردن</button>'
           : canDel && !x.deleted ? '<button class="save danger" data-a="txDel">🗑️ پاک کردن</button>' : ''}`);
     }
-    case 'bill':
-      if (!M.kindId) {
-        return sheet('➕🧾', `<div class="grid">${BILL_KINDS.map((c) =>
-          `<button class="tile" data-a="billKind" data-v="${c.id}"><span class="pic">${c.icon}</span><small>${c.name}</small></button>`).join('')}</div>`);
-      }
-      return sheet(`${BILL_KINDS.find((c) => c.id === M.kindId).icon} 📅`, `<div class="grid" style="grid-template-columns:repeat(6,1fr)">
-        ${Array.from({ length: 31 }, (_, i) => `<button class="tile" style="min-height:0;padding:10px 0" data-a="billDay" data-v="${i + 1}"><b style="font-size:24px">${faDigits(i + 1)}</b></button>`).join('')}</div>`);
   }
   return '';
 }
@@ -589,7 +627,7 @@ function render() {
   if (!canTab(role(), V.tab)) V.tab = 'money';
   S.cash ||= []; S.loans ||= []; S.jars ||= []; S.contacts ||= []; S.cats ||= [];
   const body = S.members.length
-    ? ({ money: moneyView, loans: loansViewUI, bills: billsView, admin: adminView }[V.tab] || moneyView)()
+    ? ({ money: moneyView, loans: loansViewUI, admin: adminView }[V.tab] || moneyView)()
     : '';
   const focus = document.activeElement?.id;
   const typed = [...$app.querySelectorAll('input[id]')].map((el) => [el.id, el.value]);
@@ -597,7 +635,7 @@ function render() {
   const kind = V.modal?.kind || null;
   const SCROLLERS = ['.sheet', '.sheet .picker'];
   const kept = kind && kind === shownKind ? SCROLLERS.map((q) => $app.querySelector(q)?.scrollTop || 0) : [];
-  $app.innerHTML = (S.members.length ? top() + editBar() : '') + body + (S.members.length ? tabs() : '') + modalView();
+  $app.innerHTML = (S.members.length ? top() : '') + body + (S.members.length ? tabs() : '') + modalView();
   shownKind = $app.querySelector('.sheet') ? kind : null;
   kept.forEach((y, i) => { const el = y && $app.querySelector(SCROLLERS[i]); if (el) el.scrollTop = y; });
   for (const [id, v] of typed) { const el = document.getElementById(id); if (el) el.value = v; }
@@ -710,22 +748,20 @@ document.addEventListener('visibilitychange', () => {
   unlockedUntil = 0;
   pocketOpen = false;
   if (['pocket', 'pocketAdd'].includes(V.modal?.kind) || V.modal?.target === 'pocket') { V.modal = null; render(); }
-  if (V.tab === 'admin' || V.edit) { V.tab = 'money'; V.room = null; V.edit = false; render(); }
+  if (V.tab === 'admin') { V.tab = 'money'; V.room = null; render(); }
 });
 
 const A = {
   tab: (v) => {
-    const go = () => { V.tab = v; V.room = null; V.edit = false; V.modal = null; render(); scrollTo(0, 0); };
+    const go = () => { V.tab = v; V.room = null; V.modal = null; render(); scrollTo(0, 0); };
     if (v === 'admin') requireAdmin(go); else go();
   },
   room: (v) => requireAdmin(() => {
-    if (v === 'editBills') Object.assign(V, { tab: 'bills', edit: true });
-    else if (v === 'report') V.room = 'report';
+    if (v === 'report' || v === 'loanBook') Object.assign(V, { tab: 'admin', room: v });
     else { if (['people', 'invite', 'summary'].includes(v)) A[v](); return; }   // these open as pop-ups
     V.modal = null; render(); scrollTo(0, 0);
   }),
   roomBack: () => { V.room = null; render(); scrollTo(0, 0); },
-  editDone: () => { Object.assign(V, { edit: false, tab: isAdmin() ? 'admin' : V.tab, room: null }); render(); scrollTo(0, 0); },
   who: () => { V.modal = { kind: 'who' }; render(); },
   iam: (v) => {
     if (!needsPin(member(v), S.me)) { becomeMe(v); return; }
@@ -791,9 +827,11 @@ const A = {
   },
   summary: () => { V.modal = { kind: 'summary', page: 0 }; render(); },
   sumNav: (v) => { V.modal.page += +v; render(); },
+  waLedger: () => sendWhatsApp(ledgerText(loanLedger(S.loans, S.currency), S.currency,
+    { name: rawName, forName: (id) => [forOf(id).icon, forOf(id).name], date: dateLabel })),
   waReport: () => {
     V.month ||= monthKey(Date.now());
-    sendWhatsApp(reportText({ txns: S.txns, currency: S.currency, month: V.month, person: rawName,
+    sendWhatsApp(reportText({ txns: S.txns, currency: S.currency, month: V.month, person: rawName, cash: monthCash(S.txns, S.loans, S.currency, V.month),
       cat: (id) => { const c = findCat(BASE_CATS, S.cats || [], 'out', id); return [c.icon, c.name]; } }));
   },
   txFrom: (v) => { V.modal.paidFrom = v === 'hand' ? 'hand' : null; render(); },
@@ -875,9 +913,13 @@ const A = {
   // qarz
   loanNew: (v) => { V.modal = { kind: 'loanNew', dir: v, amount: '', currency: S.currency }; render(); },
   loanWho: (v) => { V.modal.who = v; render(); },
+  loanFor: (v) => { V.modal.for = v; render(); },
+  lNote: () => { readLoanExtras(V.modal); V.modal.noteOpen = true; render(); document.getElementById('lnote')?.focus(); },
+  lDate: () => { readLoanExtras(V.modal); V.modal.dateOpen = true; render(); document.getElementById('ldate')?.showPicker?.(); },
   loanSave: () => commit(() => {
     const M = V.modal;
-    S.loans.push({ id: uid(), kind: 'loan', dir: M.dir, who: M.who, amount: +M.amount, currency: M.currency, by: S.me, ts: Date.now() });
+    readLoanExtras(M);
+    S.loans.push({ id: uid(), kind: 'loan', dir: M.dir, who: M.who, for: M.for || 'other', note: M.note || null, amount: +M.amount, currency: M.currency, by: S.me, ts: pickTs(M.date) });
     log('loan', M.dir === 'lent' ? '📤' : '📥', `${contact(M.who)?.name || ''} ${money(+M.amount, M.currency)}`);
     V.modal = null;
   }),
@@ -889,7 +931,8 @@ const A = {
   },
   loanPaySave: () => commit(() => {
     const M = V.modal;
-    S.loans.push({ id: uid(), kind: 'pay', loanId: M.id, amount: +M.amount, by: S.me, ts: Date.now() });
+    readLoanExtras(M);
+    S.loans.push({ id: uid(), kind: 'pay', loanId: M.id, note: M.note || null, amount: +M.amount, by: S.me, ts: pickTs(M.date) });
     const l = S.loans.find((r) => r.id === M.id);
     log('loanPay', '💵', `${contact(l?.who)?.name || ''} ${money(+M.amount, M.currency)}`);
     V.modal = { kind: 'loan', id: M.id };
@@ -967,20 +1010,6 @@ const A = {
     }));
   },
 
-  payBill: (v) => {
-    const b = S.bills.find((x) => x.id === v);
-    V.modal = { kind: 'tx', type: 'out', cat: b.kind, billId: b.id, amount: '', currency: S.currency };
-    render();
-  },
-  newBill: () => { V.modal = { kind: 'bill' }; render(); },
-  billKind: (v) => { V.modal.kindId = v; render(); },
-  billDay: (v) => commit(() => {
-    S.bills.push({ id: uid(), kind: V.modal.kindId, dueDay: +v, ts: Date.now() });
-    log('addBill', '🧾➕', BILL_KINDS.find((c) => c.id === V.modal.kindId).name);
-    V.modal = null;
-  }),
-  rmBill: (v) => commit(() => { const b = S.bills.find((x) => x.id === v); b.deleted = true; log('rmBill', '🧾🗑️', ''); }),
-
   month: (v) => { V.month = shiftMonth(V.month, +v); render(); },
   export: () => {
     const a = document.createElement('a');
@@ -1002,6 +1031,11 @@ document.addEventListener('input', (e) => {
     V.modal.name = e.target.value; V.modal.q = e.target.value; V.modal.autoName = false;
     render();
   }
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'ldate' || !V.modal) return;
+  V.modal.date = e.target.value || null; render();
 });
 
 document.addEventListener('click', (e) => {

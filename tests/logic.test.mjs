@@ -108,9 +108,9 @@ test('roles: only admin and earner; everything else counts as earner', () => {
   assert.equal(roleOf(undefined), 'earner');
 });
 
-test('earner: money, loans, bills; admin also the admin door; no grocery tab', () => {
-  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'admin'].filter((t) => canTab('earner', t)), ['money', 'loans', 'bills']);
-  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'admin'].filter((t) => canTab('admin', t)), ['money', 'loans', 'bills', 'admin']);
+test('earner: money and loans; admin also the admin door; no grocery or bills tab', () => {
+  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'admin'].filter((t) => canTab('earner', t)), ['money', 'loans']);
+  assert.deepEqual(['grocery', 'money', 'loans', 'bills', 'admin'].filter((t) => canTab('admin', t)), ['money', 'loans', 'admin']);
   assert.equal(canTab('earner', 'admin'), false);
   assert.equal(canTab('helper', 'grocery'), false);
 });
@@ -384,8 +384,80 @@ test('choosing who you are asks the PIN, unless it is already you or no PIN set 
 
 import { navTabs } from '../logic.js';
 test('bottom bar: front places for everyone, one admin door last (admin only)', () => {
-  assert.deepEqual(navTabs('admin'), ['money', 'loans', 'bills', 'admin']);
-  assert.deepEqual(navTabs('earner'), ['money', 'loans', 'bills']);
-  assert.deepEqual(navTabs('nobody'), ['money', 'loans', 'bills']);
+  assert.deepEqual(navTabs('admin'), ['money', 'loans', 'admin']);
+  assert.deepEqual(navTabs('earner'), ['money', 'loans']);
+  assert.deepEqual(navTabs('nobody'), ['money', 'loans']);
   assert.ok(navTabs('admin').length <= 5);
+});
+
+// ---------- loan book + month carry-over ----------
+import { loanFlows, monthCash, loanLedger, ledgerText } from '../logic.js';
+
+const AQRAB = d('2026-11-13'), MIZAN = d('2026-10-10'), QAWS = d('2026-12-10');
+const LOANS = [
+  { id: 'L1', kind: 'loan', dir: 'borrowed', who: 'c1', amount: 10000, currency: 'AFN', for: 'house', note: 'سقف', ts: MIZAN },
+  { id: 'P1', kind: 'pay', loanId: 'L1', amount: 3000, note: 'نقد', ts: AQRAB },
+  { id: 'P2', kind: 'pay', loanId: 'L1', amount: 2000, ts: QAWS },
+  { id: 'L2', kind: 'loan', dir: 'lent', who: 'c2', amount: 4000, currency: 'AFN', for: 'wedding', ts: AQRAB },
+  { id: 'P3', kind: 'pay', loanId: 'L2', amount: 4000, ts: QAWS },
+  { id: 'L3', kind: 'loan', dir: 'lent', who: 'c1', amount: 500, currency: 'USD', ts: AQRAB },
+  { id: 'L4', kind: 'loan', dir: 'lent', who: 'c3', amount: 999, currency: 'AFN', ts: AQRAB, deleted: true },
+  { id: 'P4', kind: 'pay', loanId: 'L4', amount: 999, ts: AQRAB },
+];
+
+test('loanFlows: borrowing = money in, paying back = out; lending = out, getting paid = in', () => {
+  const f = loanFlows(LOANS, 'AFN');
+  assert.deepEqual(f.map((x) => [x.dir, x.amount]), [['in', 10000], ['out', 3000], ['out', 4000], ['out', 2000], ['in', 4000]]);
+});
+
+test('monthCash: leftover carries to next month, overspending carries as minus, loans counted separately', () => {
+  const txns = [
+    { type: 'in', amount: 1000, currency: 'AFN', ts: MIZAN },
+    { type: 'out', amount: 9000, currency: 'AFN', ts: MIZAN },
+    { type: 'out', amount: 2500, currency: 'AFN', ts: AQRAB },
+    { type: 'in', amount: 777, currency: 'AFN', ts: MIZAN, deleted: true },
+    { type: 'in', amount: 50, currency: 'USD', ts: MIZAN },
+  ];
+  const mizan = monthCash(txns, LOANS, 'AFN', monthKey(MIZAN));
+  assert.deepEqual(mizan, { opening: 0, in: 1000, out: 9000, loanIn: 10000, loanOut: 0, closing: 2000 });
+  const aqrab = monthCash(txns, LOANS, 'AFN', monthKey(AQRAB));
+  assert.deepEqual(aqrab, { opening: 2000, in: 0, out: 2500, loanIn: 0, loanOut: 7000, closing: -7500 });
+  const qaws = monthCash(txns, LOANS, 'AFN', monthKey(QAWS));
+  assert.equal(qaws.opening, -7500);
+  assert.equal(qaws.closing, -7500 - 2000 + 4000);
+  assert.equal(monthCash(txns, LOANS, 'USD', monthKey(AQRAB)).opening, 50);
+});
+
+test('loanLedger: per person dated rows, got/gave totals and what is still open', () => {
+  const L = loanLedger(LOANS, 'AFN');
+  assert.deepEqual(L.total, { got: 14000, gave: 9000, weOwe: 5000, theyOwe: 0 });
+  const c1 = L.people.find((p) => p.who === 'c1');
+  assert.deepEqual(c1.rows.map((r) => [r.kind, r.amount, r.for, r.note]),
+    [['borrowed', 10000, 'house', 'سقف'], ['payOut', 3000, 'house', 'نقد'], ['payOut', 2000, 'house', null]]);
+  assert.equal(c1.rows[1].loanNote, 'سقف');
+  assert.deepEqual([c1.got, c1.gave, c1.weOwe, c1.theyOwe], [10000, 5000, 5000, 0]);
+  const c2 = L.people.find((p) => p.who === 'c2');
+  assert.deepEqual([c2.got, c2.gave, c2.theyOwe], [4000, 4000, 0]);
+  assert.equal(L.people[0].who, 'c1');   // biggest open debt first
+  assert.equal(L.people.some((p) => p.who === 'c3'), false);   // deleted loan and its payment hidden
+  assert.equal(loanLedger(LOANS, 'USD').total.theyOwe, 500);
+});
+
+test('ledgerText: WhatsApp text lists every dated row and what is open', () => {
+  const t = ledgerText(loanLedger(LOANS, 'AFN'), 'AFN', {
+    name: (id) => ({ c1: 'کاکا', c2: 'همسایه' }[id]), forName: (id) => ({ house: ['🏠', 'خانه'], wedding: ['💍', 'عروسی'] }[id]), date: () => 'روز' });
+  assert.match(t, /👤 کاکا/);
+  assert.match(t, /📥 قرض گرفتیم .*🏠 خانه · سقف/);
+  assert.match(t, /💵 ما پس دادیم .* · نقد/);
+  assert.match(t, /⬅️ بالای ما: ۵٬۰۰۰|⬅️ بالای ما: ۵,۰۰۰|⬅️ بالای ما:/);
+  assert.match(t, /👤 همسایه[\s\S]*✅ حساب صاف/);
+});
+
+test('reportText with cash: shows carry-in, loan money and what goes to next month', () => {
+  const ts = AQRAB;
+  const t = reportText({ txns: [{ type: 'out', amount: 100, currency: 'AFN', ts, by: 'a', cat: 'food' }], currency: 'AFN', month: monthKey(ts),
+    cat: () => ['🛒', 'سودا'], person: () => 'بابه', cash: { opening: -50, in: 0, out: 100, loanIn: 1000, loanOut: 0, closing: 850 } });
+  assert.match(t, /↪️ از ماه قبل: − /);
+  assert.match(t, /🤝 قرض آمد/);
+  assert.match(t, /🟢 باقی: .* \(به ماه بعد\)/);
 });

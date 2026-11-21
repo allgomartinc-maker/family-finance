@@ -55,6 +55,7 @@ export function cleanRecord(coll, rec) {
       if (r.dir !== 'lent' && r.dir !== 'borrowed') return null;
       if (!isId(r.who)) return null;
       if (r.currency !== 'AFN' && r.currency !== 'USD') r.currency = 'AFN';
+      if (has('for') && r.for !== null && !isId(r.for)) r.for = 'other';
     } else if (r.kind === 'pay') {
       if (!isId(r.loanId)) return null;
     } else return null;

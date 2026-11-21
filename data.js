@@ -28,6 +28,13 @@ export const IN_CATS = [
   ['abroad', '✈️', 'از خارج'], ['family', '👨‍👩‍👧', 'فامیل'], ['gift', '🎁', 'تحفه'], ['other', '❓', 'دیگر'],
 ].map(([id, icon, name]) => ({ id, icon, name }));
 
+// What a loan was for (picture + Dari word).
+export const LOAN_FOR = [
+  ['house', '🏠', 'خانه'], ['rent', '🔑', 'کرایه'], ['wedding', '💍', 'عروسی'], ['health', '💊', 'دوا و داکتر'],
+  ['car', '🚗', 'موتر'], ['shop', '🏪', 'دکان و کار'], ['goods', '📦', 'جنس'], ['school', '📚', 'مکتب'],
+  ['food', '🛒', 'سودا'], ['travel', '✈️', 'سفر'], ['family', '👨‍👩‍👧', 'فامیل'], ['other', '❓', 'دیگر'],
+].map(([id, icon, name]) => ({ id, icon, name }));
+
 export const BILL_KINDS = OUT_CATS.filter((c) =>
   ['power', 'water', 'gas', 'net', 'phone', 'rent', 'school'].includes(c.id));
 

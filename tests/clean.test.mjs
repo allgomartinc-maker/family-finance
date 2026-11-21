@@ -133,3 +133,9 @@ test('expense note: kept as plain text, cut to 120, junk types become text', () 
   assert.equal(cleanRecord('txns', { id: 'a1', type: 'out', note: 'x'.repeat(500) }).note.length, 120);
   assert.equal(typeof cleanRecord('txns', { id: 'a1', type: 'out', note: { evil: 1 } }).note, 'string');
 });
+
+test('loan "for what" must be an id; bad values become other', () => {
+  assert.equal(cleanRecord('loans', { id: 'l1', kind: 'loan', dir: 'lent', who: 'c1', currency: 'AFN', for: 'house' }).for, 'house');
+  assert.equal(cleanRecord('loans', { id: 'l1', kind: 'loan', dir: 'lent', who: 'c1', currency: 'AFN', for: '<img onerror=x>' }).for, 'other');
+  assert.equal(cleanRecord('loans', { id: 'p1', kind: 'pay', loanId: 'l1', note: 'x'.repeat(300) }).note.length, 120);
+});

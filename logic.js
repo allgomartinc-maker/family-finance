@@ -76,10 +76,10 @@ export const CUR_NAME = { AFN: 'افغانی', USD: 'دالر' };
 export const money = (n, cur) => `${nf.format(n)} ${CUR_NAME[cur] || CUR_NAME.AFN}`;
 
 // ---------- roles ----------
-// admin: everything (PIN) · earner: own money, loans, bills.
+// admin: everything (PIN) · earner: own money and loans.
 // Old roles (member, helper, orderer) are read as earner.
 export const roleOf = (m) => (m?.role === 'admin' ? 'admin' : 'earner');
-const TABS = { admin: ['money', 'loans', 'bills', 'admin'], earner: ['money', 'loans', 'bills'] };
+const TABS = { admin: ['money', 'loans', 'admin'], earner: ['money', 'loans'] };
 export const canBuy = () => true;
 export const nextRole = (role) => (role === 'earner' ? 'admin' : 'earner');
 export const canTab = (role, tab) => (TABS[role] || TABS.earner).includes(tab);
@@ -137,6 +137,81 @@ export function loansView(records, currency, onlyBy = null) {
   const open = { lent: 0, borrowed: 0 };
   for (const l of loans) open[l.dir] += l.left;
   return { loans, open };
+}
+
+// ---------- loan book ----------
+// Loans move real cash: borrowing brings money in, paying it back sends it out; lending is the reverse.
+// Payments belong to their loan (currency, person, purpose); payments of a deleted loan are ignored.
+export function loanFlows(records, currency) {
+  const loans = {};
+  for (const r of records) if (r.kind === 'loan' && !r.deleted && r.currency === currency) loans[r.id] = r;
+  const out = [];
+  for (const r of records) {
+    if (r.deleted) continue;
+    if (r.kind === 'loan' && loans[r.id]) out.push({ ts: r.ts, dir: r.dir === 'borrowed' ? 'in' : 'out', amount: r.amount, loan: r, pay: null });
+    if (r.kind === 'pay' && loans[r.loanId]) {
+      const l = loans[r.loanId];
+      out.push({ ts: r.ts, dir: l.dir === 'borrowed' ? 'out' : 'in', amount: r.amount, loan: l, pay: r });
+    }
+  }
+  return out.sort((a, b) => a.ts - b.ts);
+}
+
+// One month of cash: what was left from before (opening), this month's real income/spending,
+// loan money in/out, and what is left to carry into next month (closing). Overspending carries as minus.
+export function monthCash(txns, loans, currency, month) {
+  const r = { opening: 0, in: 0, out: 0, loanIn: 0, loanOut: 0, closing: 0 };
+  const add = (ts, isIn, amount, inKey, outKey) => {
+    const k = monthKey(ts);
+    if (k < month) r.opening += isIn ? amount : -amount;
+    else if (k === month) r[isIn ? inKey : outKey] += amount;
+  };
+  for (const x of txns) if (!x.deleted && x.currency === currency) add(x.ts, x.type === 'in', x.amount, 'in', 'out');
+  for (const f of loanFlows(loans, currency)) add(f.ts, f.dir === 'in', f.amount, 'loanIn', 'loanOut');
+  r.closing = r.opening + r.in + r.loanIn - r.out - r.loanOut;
+  return r;
+}
+
+// Per person, oldest first: every amount we got from them and gave to them, and what is still open.
+// rows: { ts, kind: 'borrowed'|'lent'|'payOut' (we paid back)|'payIn' (they paid us), amount, for, note, loanNote }
+export function loanLedger(records, currency) {
+  const paid = {};
+  for (const r of records) if (r.kind === 'pay' && !r.deleted) paid[r.loanId] = (paid[r.loanId] || 0) + r.amount;
+  const P = {};
+  const total = { got: 0, gave: 0, weOwe: 0, theyOwe: 0 };
+  for (const f of loanFlows(records, currency)) {
+    const l = f.loan;
+    const p = (P[l.who] ||= { who: l.who, rows: [], got: 0, gave: 0, weOwe: 0, theyOwe: 0 });
+    const kind = f.pay ? (l.dir === 'borrowed' ? 'payOut' : 'payIn') : l.dir;
+    p.rows.push({ ts: f.ts, kind, amount: f.amount, for: l.for || 'other', note: (f.pay ? f.pay.note : l.note) || null, loanNote: f.pay ? l.note || null : null });
+    p[f.dir === 'in' ? 'got' : 'gave'] += f.amount;
+    total[f.dir === 'in' ? 'got' : 'gave'] += f.amount;
+    if (!f.pay) {
+      const left = Math.max(0, l.amount - (paid[l.id] || 0));
+      p[l.dir === 'borrowed' ? 'weOwe' : 'theyOwe'] += left;
+      total[l.dir === 'borrowed' ? 'weOwe' : 'theyOwe'] += left;
+    }
+  }
+  const people = Object.values(P).sort((a, b) => (b.weOwe + b.theyOwe) - (a.weOwe + a.theyOwe) || b.rows.at(-1).ts - a.rows.at(-1).ts);
+  return { people, total };
+}
+
+const LEDGER_WORD = { borrowed: '📥 قرض گرفتیم', lent: '📤 قرض دادیم', payOut: '💵 ما پس دادیم', payIn: '💵 پس آورد' };
+// name(id) → person's name · forName(id) → [icon, name] · date(ts) → date text
+export function ledgerText(ledger, currency, { name, forName, date }) {
+  const m = (n) => money(n, currency);
+  const out = ['🤝 دفتر قرض', '', `📤 بالای مردم: ${m(ledger.total.theyOwe)}`, `📥 بالای ما: ${m(ledger.total.weOwe)}`];
+  for (const p of ledger.people) {
+    out.push('', `👤 ${name(p.who)}`);
+    for (const r of p.rows) {
+      const [ic, nm] = forName(r.for);
+      out.push(`${date(r.ts)} · ${LEDGER_WORD[r.kind]} ${m(r.amount)} · ${ic} ${nm}${r.note ? ` · ${r.note}` : ''}`);
+    }
+    if (p.theyOwe) out.push(`➡️ بالای او: ${m(p.theyOwe)}`);
+    if (p.weOwe) out.push(`⬅️ بالای ما: ${m(p.weOwe)}`);
+    if (!p.theyOwe && !p.weOwe) out.push('✅ حساب صاف');
+  }
+  return out.join('\n');
 }
 
 // ---------- savings jars ----------
@@ -225,11 +300,16 @@ export const sheetEnters = (prevKind, kind) => !!kind && kind !== prevKind;
 
 // ---------- plain text for WhatsApp ----------
 // cat(id) → [icon, name] · person(id) → name. Biggest spending first.
-export function reportText({ txns, currency, month, cat, person }) {
+export function reportText({ txns, currency, month, cat, person, cash = null }) {
   const t = totals(txns, currency, month);
   const m = (n) => money(n, currency);
-  const out = [`📊 حساب خانواده — ${monthLabel(month)}`, '',
-    `⬇️ آمد: ${m(t.in)}`, `⬆️ مصرف: ${m(t.out)}`, t.net >= 0 ? `🟢 باقی: ${m(t.net)}` : `🔴 کم: ${m(-t.net)}`];
+  const end = (n) => (n >= 0 ? `🟢 باقی: ${m(n)}` : `🔴 کم: ${m(-n)}`);
+  const out = [`📊 حساب خانواده — ${monthLabel(month)}`, ''];
+  if (cash) {
+    out.push(`↪️ از ماه قبل: ${cash.opening < 0 ? '− ' : ''}${m(Math.abs(cash.opening))}`, `⬇️ آمد: ${m(t.in)}`, `⬆️ مصرف: ${m(t.out)}`);
+    if (cash.loanIn || cash.loanOut) out.push(`🤝 قرض آمد: ${m(cash.loanIn)}`, `🤝 قرض رفت: ${m(cash.loanOut)}`);
+    out.push(`${end(cash.closing)} (به ماه بعد)`);
+  } else out.push(`⬇️ آمد: ${m(t.in)}`, `⬆️ مصرف: ${m(t.out)}`, end(t.net));
   const cats = Object.entries(t.byCat).sort((a, b) => b[1] - a[1]);
   if (cats.length) out.push('', 'مصرف به کدام چیز:', ...cats.map(([id, v]) => { const [ic, nm] = cat(id); return `${ic} ${nm}: ${m(v)}`; }));
   const people = Object.entries(t.byPerson);
