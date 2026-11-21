@@ -144,3 +144,7 @@ test('noTime (loan entered with an older date) is a plain true/false', () => {
   assert.equal(cleanRecord('loans', { id: 'p1', kind: 'pay', loanId: 'l1', noTime: true }).noTime, true);
   assert.equal(cleanRecord('loans', { id: 'p1', kind: 'pay', loanId: 'l1', noTime: '<b>' }).noTime, false);
 });
+
+test('member role viewer is kept from the cloud', () => {
+  assert.equal(cleanRecord('members', { id: 'm1', role: 'viewer' }).role, 'viewer');
+});

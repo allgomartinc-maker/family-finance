@@ -405,3 +405,6 @@ button.mline { width: 100%; text-align: start; }
 .field input:focus { outline: none; }
 .cred { font: 700 17px var(--f-text); overflow-wrap: anywhere; margin: 2px 0 10px; }
 .cred-big { font-size: 28px; letter-spacing: 1px; color: var(--lapis-ink); }
+/* Viewer (بیننده): read-only notice */
+.viewonly { margin-top: 4px; padding: 12px 14px; border-radius: var(--r); background: var(--lapis-soft); color: var(--lapis-ink);
+  text-align: center; font-size: 16px; border: 2px dashed var(--lapis); }

@@ -307,11 +307,11 @@ test('everyone can buy', () => {
   for (const r of ['admin', 'earner', 'helper', 'orderer']) assert.equal(canBuy(r), true);
 });
 
-test('admin role button switches earner ↔ admin', () => {
+test('role button: manager → viewer → earner → manager', () => {
+  assert.equal(nextRole('admin'), 'viewer');
+  assert.equal(nextRole('viewer'), 'earner');
   assert.equal(nextRole('earner'), 'admin');
-  assert.equal(nextRole('admin'), 'earner');
-  assert.equal(nextRole('helper'), 'earner');
-  assert.equal(nextRole('orderer'), 'earner');
+  assert.equal(nextRole('helper'), 'viewer');
 });
 
 // ---------- buy everything, then one total ----------
@@ -491,4 +491,16 @@ test('parseInvite: finds the family in a pasted invite link, ignores anything el
   assert.equal(parseInvite('https://allgomartinc-maker.github.io/family-finance/'), null);
   assert.equal(parseInvite('#join=short.code'), null);
   assert.equal(parseInvite(''), null);
+});
+
+import { canWrite } from '../logic.js';
+test('viewer: sees money, loans and reports for the whole family, can change nothing', () => {
+  assert.equal(roleOf({ role: 'viewer' }), 'viewer');
+  assert.deepEqual(navTabs('viewer'), ['money', 'loans', 'report']);
+  assert.equal(canTab('viewer', 'admin'), false);
+  assert.equal(canWrite('viewer'), false);
+  for (const r of ['admin', 'earner']) assert.equal(canWrite(r), true);
+  const tx = [{ by: 'a' }, { by: 'b' }];
+  assert.equal(visibleTxns(tx, 'viewer', 'z').length, 2);
+  assert.equal(visibleTxns(tx, 'earner', 'a').length, 1);
 });

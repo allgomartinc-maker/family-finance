@@ -3,7 +3,7 @@ import { OUT_CATS, IN_CATS, LOAN_FOR, FACES, GOALS, COUNTRIES, IN_PICS, OUT_PICS
 import {
   monthKey, shiftMonth, monthLabel, totals, faDigits, money,
   roleOf, canTab, cashBalances, visibleTxns, loansView, jarTotals, abroadSummary,
-  monthCompare, jarsMonthNet, monthCash, loanFlows, loanLedger, loanStatement, loanTotals, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, reportText, needsPin, navTabs, parseInvite,
+  monthCompare, jarsMonthNet, monthCash, loanFlows, loanLedger, loanStatement, loanTotals, ledgerText, pocketBalance, searchPicker, findCat, catsFor, sheetEnters, nextRole, canWrite, reportText, needsPin, navTabs, parseInvite,
 } from './logic.js';
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
@@ -44,10 +44,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 const me = () => S.members.find((m) => m.id === S.me);
 const isAdmin = () => me()?.role === 'admin';
 const role = () => roleOf(me());
-const ROLE_ICON = { admin: '👑', earner: '💰' };
-const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور' };
-const TAB_NAME = { money: 'پول', loans: 'قرض', admin: 'مدیر' };
-const TAB_ICON = { money: '💰', loans: '🤝', admin: '🗝️' };
+const ROLE_ICON = { admin: '👑', earner: '💰', viewer: '👁️' };
+const ROLE_NAME = { admin: 'مدیر', earner: 'نان‌آور', viewer: 'بیننده' };
+const writer = () => canWrite(role());        // viewer: sees everything, changes nothing
+const seesAll = () => isAdmin() || role() === 'viewer';
+const viewOnly = () => (writer() ? '' : '<div class="viewonly">👁️ <b>فقط دیدن</b> — شما بیننده هستید؛ تغییر را مدیر می‌کند</div>');
+const TAB_NAME = { money: 'پول', loans: 'قرض', report: 'گزارش', admin: 'مدیر' };
+const TAB_ICON = { money: '💰', loans: '🤝', report: '📊', admin: '🗝️' };
 // Picture + its Dari word underneath: people who read can read it and teach the picture to those who can't.
 const L = (icon, word) => `${icon}<span class="lab">${word}</span>`;
 const who = (id) => esc(member(id)?.name || contact(id)?.name || '');
@@ -216,19 +219,19 @@ function loanCard(T) {
 function moneyView() {
   const m = monthKey(Date.now());
   const c = monthCash(S.txns, S.loans, S.currency, m);   // money in hand; borrowed money never counts
-  const T = loanTotals(isAdmin() ? S.loans : S.loans.filter((r) => r.kind === 'pay' || r.by === S.me), S.currency);
+  const T = loanTotals(seesAll() ? S.loans : S.loans.filter((r) => r.kind === 'pay' || r.by === S.me), S.currency);
   const list = visibleTxns(S.txns.filter((x) => !x.deleted), role(), S.me).sort((a, b) => b.ts - a.ts).slice(0, 40);
   const hb = Object.entries(hands());
   return `<section>
-    <div class="bigbtns">
+    ${writer() ? `<div class="bigbtns">
       <button class="big in" data-a="addTx" data-v="in">⬇️<small>پول آمد</small></button>
       <button class="big out" data-a="addTx" data-v="out">⬆️<small>مصرف</small></button>
-    </div>
+    </div>` : viewOnly()}
     ${cashCard(c, m)}
     ${loanCard(T)}
     <div class="row" style="margin-top:8px"><span class="lbl grow">${monthLabel(m)}</span>${curSwitch()}</div>
     <div class="chips" style="margin-top:10px">
-      <button class="chip give" data-a="give">🤲<b>خرچی</b></button>
+      ${writer() ? '<button class="chip give" data-a="give">🤲<b>خرچی</b></button>' : ''}
       ${hb.map(([id, v]) => `<button class="chip col" data-a="hand" data-v="${id}"><span class="row1">${face(member(id), 'f40')}<b>${money(v, S.currency)}</b></span><span class="lab">خرچی ${who(id)}</span></button>`).join('')}
     </div>
     ${jarsRow()}
@@ -242,7 +245,7 @@ const curSwitch = () => `<div class="seg cur" style="width:190px">
 
 // One money row; on the Money page your own rows (all rows for admin) get ✏️ edit and 🗑️ delete right under them.
 const txRow = (x, actions = false) => {
-  const canEdit = actions && !x.deleted && (isAdmin() || x.by === S.me);
+  const canEdit = actions && !x.deleted && writer() && (isAdmin() || x.by === S.me);
   const acts = !canEdit ? '' : V.confirmTx === x.id
     ? `<div class="acts"><b class="out-c">پاک شود؟</b><button class="mini danger" data-a="txDelYes" data-v="${x.id}">🗑️ بلی</button><button class="mini" data-a="txDelNo">↩️ نه</button></div>`
     : `<div class="acts"><button class="mini" data-a="txEdit" data-v="${x.id}">✏️ تغییر</button><button class="mini" data-a="txDelAsk" data-v="${x.id}">🗑️ پاک</button></div>`;
@@ -268,7 +271,7 @@ function jarsRow() {
 }
 
 function loansViewUI() {
-  const v = loansView(S.loans, S.currency, isAdmin() ? null : S.me);
+  const v = loansView(S.loans, S.currency, seesAll() ? null : S.me);
   const row = (l) => {
     const c = contact(l.who);
     return `<button class="tx ${l.done ? 'del2' : ''}" data-a="loanOpen" data-v="${l.id}">
@@ -279,7 +282,7 @@ function loansViewUI() {
       ${face(member(l.by), 'f24')}</button>`;
   };
   // Earners see their own loans; admin sees the whole family's.
-  const T = loanTotals(isAdmin() ? S.loans : S.loans.filter((r) => r.kind === 'pay' || r.by === S.me), S.currency);
+  const T = loanTotals(seesAll() ? S.loans : S.loans.filter((r) => r.kind === 'pay' || r.by === S.me), S.currency);
   const box = (t, lent) => `<div class="stmt-sum">
       <div><span class="lab">کل</span><b>${money(t.total, S.currency)}</b></div>
       <div><span class="lab">${lent ? 'پس آوردند' : 'پس دادیم'}</span><b>${money(t.paid, S.currency)}</b></div>
@@ -292,10 +295,10 @@ function loansViewUI() {
     <div class="stmt"><div class="stmt-head">👥 هر نفر</div>${T.people.map((p) => `<div class="prow">${face(contact(p.who), 'f40')}
       <div class="grow"><b>${who(p.who) || '—'}</b>${line(p.borrowed, false)}${line(p.lent, true)}</div></div>`).join('')}</div>` : '';
   return `<section>
-    <div class="bigbtns">
+    ${writer() ? `<div class="bigbtns">
       <button class="big in" data-a="loanNew" data-v="lent">📤<small>قرض دادیم</small></button>
       <button class="big out" data-a="loanNew" data-v="borrowed">📥<small>قرض گرفتیم</small></button>
-    </div>
+    </div>` : viewOnly()}
     <div class="row" style="margin-top:8px;justify-content:flex-end">${curSwitch()}</div>
     <div style="margin-top:12px">${totals}</div>
     ${isAdmin() ? '<button class="save" style="background:var(--sel)" data-a="room" data-v="loanBook">🤝📒 دفتر قرض — همه با تاریخ</button>' : ''}
@@ -351,6 +354,11 @@ function loanBookView() {
     ${L0.people.length ? '<button class="save wa" style="margin:12px 0" data-a="waLedger">💬 فرستادن دفتر قرض به واتساپ</button>' : ''}
     ${L0.people.map(person).join('') || '<div class="empty">🤝</div>'}
   </section>`;
+}
+
+// Viewer's 📊 tab: the month report and the whole loan book — to read, not to change.
+function viewerReportView() {
+  return `${reportView()}<section><div class="mtitle">🤝📒 دفتر قرض</div></section>${loanBookView()}`;
 }
 
 function reportView() {
@@ -473,6 +481,7 @@ function modalView() {
           `<button class="tile ${M.emoji === f && !M.photo ? 'sel' : ''}" style="min-height:0;padding:6px" data-a="memoji" data-v="${f}"><span class="pic" style="font-size:36px;height:44px;line-height:44px">${f}</span></button>`).join('')}</div>
         <p><input class="name" id="mname" placeholder="نام (اختیاری)" value="${esc(M.name)}"></p>
         ${first || M.self ? '' : `<div class="seg">
+          <button data-a="mrole" data-v="viewer" class="${M.role === 'viewer' ? 'on' : ''}">👁️<small>بیننده</small></button>
           <button data-a="mrole" data-v="earner" class="${M.role === 'earner' ? 'on' : ''}">💰<small>نان‌آور</small></button>
           <button data-a="mrole" data-v="admin" class="${M.role === 'admin' ? 'on' : ''}">👑<small>مدیر</small></button></div>`}
         <button class="save" data-a="msave" ${M.emoji || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
@@ -565,7 +574,7 @@ function modalView() {
         ...S.txns.filter((x) => !x.deleted && x.by === p && x.paidFrom === 'hand' && x.currency === S.currency)
           .map((x) => ({ ts: x.ts, icon: catOf('out', x.cat).icon, amt: -x.amount, who: null })),
       ].sort((a, b) => b.ts - a.ts).slice(0, 30);
-      const canReturn = bal > 0;
+      const canReturn = bal > 0 && writer();
       return sheet(`🤲 ${face(member(p), 'f40')}`, `
         <div class="display">${money(bal, S.currency)}</div>
         <div class="list" style="margin-top:10px">${ev.map((e) => `<div class="tx"><span class="cat">${e.icon}</span>
@@ -603,7 +612,7 @@ function modalView() {
     case 'loan': {
       const st = loanStatement(S.loans, M.id);
       if (!st) return '';
-      const l = st.loan, canEdit = isAdmin() || l.by === S.me;
+      const l = st.loan, canEdit = writer() && (isAdmin() || l.by === S.me);
       return sheet(`${l.dir === 'lent' ? '📤' : '📥'} ${face(contact(l.who), 'f40')}`, `${statementCard(st, true, canEdit)}
         ${canEdit && st.left ? `<button class="save" data-a="loanPayStart">💵 ${l.dir === 'lent' ? 'پس آورد' : 'پس دادن قرض'}</button>` : ''}
         ${canEdit ? '<button class="save danger" data-a="loanDel">🗑️ پاک کردن</button>' : ''}`);
@@ -653,7 +662,7 @@ function modalView() {
         <div class="list" style="margin-top:10px">${moves.map((m) => `<div class="tx"><span class="cat">${m.amount >= 0 ? '➕' : '➖'}</span>
           <span class="grow amt ${m.amount >= 0 ? 'in-c' : 'out-c'}">${money(Math.abs(m.amount), j.currency)}</span>${face(member(m.by), 'f24')}<span class="lbl">${dayLabel(m.ts)}</span></div>`).join('')}</div>
         <div class="row" style="gap:10px">
-          <button class="save" data-a="jarMoveStart" data-v="in">➕ گذاشتن</button>
+          ${writer() ? '<button class="save" data-a="jarMoveStart" data-v="in">➕ گذاشتن</button>' : ''}
           ${isAdmin() ? '<button class="save danger" data-a="jarMoveStart" data-v="out">➖ برداشتن</button>' : ''}</div>
         ${isAdmin() ? '<button class="save" style="background:#555" data-a="jarDel">🗑️ پاک کردن</button>' : ''}`);
     }
@@ -771,7 +780,7 @@ function modalView() {
     case 'txView': {
       const x = S.txns.find((t) => t.id === M.id);
       const c = catOf(x.type, x.cat);
-      const canDel = isAdmin() || x.by === S.me;
+      const canDel = writer() && (isAdmin() || x.by === S.me);
       return sheet(`${c.icon}`, `
         <div class="card" style="text-align:center">
           <div class="amt ${x.type}-c" style="font-size:40px;font-weight:700">${x.type === 'in' ? '⬇️' : '⬆️'} ${money(x.amount, x.currency)}</div>
@@ -798,7 +807,7 @@ function render() {
   if (!canTab(role(), V.tab)) V.tab = 'money';
   S.cash ||= []; S.loans ||= []; S.jars ||= []; S.contacts ||= []; S.cats ||= [];
   const body = S.members.length
-    ? ({ money: moneyView, loans: loansViewUI, admin: adminView }[V.tab] || moneyView)()
+    ? ({ money: moneyView, loans: loansViewUI, report: viewerReportView, admin: adminView }[V.tab] || moneyView)()
     : '';
   const focus = document.activeElement?.id;
   const typed = [...$app.querySelectorAll('input[id]')].map((el) => [el.id, el.value]);
@@ -947,7 +956,7 @@ const A = {
   people: () => requireAdmin(() => { V.modal = { kind: 'people' }; render(); }),
   pinTap: (v) => pinTap(+v),
   pinBack: () => { V.modal.seq.pop(); render(); },
-  newSelf: () => { V.modal = { kind: 'member', role: 'earner', self: true }; render(); },
+  newSelf: () => { V.modal = { kind: 'member', role: 'viewer', self: true }; render(); },
   roleCycle: (v) => requireAdmin(() => commit(() => {
     const m = member(v);
     const next = nextRole(roleOf(m));
@@ -956,7 +965,7 @@ const A = {
   invite: () => { V.modal = { kind: 'invite' }; render(); },
   shareLink: () => navigator.share?.({ title: 'حساب خانواده', url: SY.inviteLink() }).catch(() => {}),
   copyLink: async () => { try { await navigator.clipboard.writeText(SY.inviteLink()); toast('📋✅'); } catch { toast('📋❌'); } },
-  newMember: () => { V.modal = { kind: 'member', role: 'earner' }; render(); },
+  newMember: () => { V.modal = { kind: 'member', role: 'viewer' }; render(); },
   rmMember: (v) => commit(() => { member(v).deleted = true; log('rmMember', '👤🗑️', member(v).name); }),
   memoji: (v) => { V.modal.emoji = v; V.modal.photo = null; keepName('mname'); render(); },
   mphoto: () => { keepName('mname'); takePhoto(240, (p) => { V.modal.photo = p; render(); }); },
@@ -964,7 +973,7 @@ const A = {
   msave: () => {
     keepName('mname');
     const M = V.modal, setup = M.kind === 'setup';
-    const m = { id: uid(), emoji: M.emoji || '🙂', photo: M.photo || null, name: M.name || '', role: setup ? 'admin' : M.self ? 'earner' : M.role, ts: Date.now() };
+    const m = { id: uid(), emoji: M.emoji || '🙂', photo: M.photo || null, name: M.name || '', role: setup ? 'admin' : M.self ? 'viewer' : M.role, ts: Date.now() };
     commit(() => {
       S.members.push(m);
       if (setup || M.self) { S.me = m.id; localStorage.setItem('ff-me', m.id); }
@@ -1366,9 +1375,14 @@ document.addEventListener('change', (e) => {
   if (e.target.id === 'txwhen') { V.modal.when = e.target.value || null; render(); }
 });
 
+// Anything that adds, changes or deletes family money is closed to viewers (buttons are hidden too).
+const WRITES = new Set(['addTx', 'txSave', 'txEdit', 'txDel', 'txDelAsk', 'txDelYes', 'txRestore', 'give', 'giveTo', 'giveSave',
+  'returnStart', 'returnSave', 'loanNew', 'loanSave', 'loanPayStart', 'loanPaySave', 'loanDel', 'loanForEdit', 'loanForSet',
+  'payEdit', 'payDel', 'payDelYes', 'jarNew', 'jarSave', 'jarMoveStart', 'jarMoveSave', 'jarDel', 'catNew', 'catSave', 'csave']);
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-a]');
   if (!el) return;
+  if (WRITES.has(el.dataset.a) && S?.members?.length && !writer()) { toast('👁️ فقط دیدن'); return; }
   A[el.dataset.a]?.(el.dataset.v, el, e);
 });
 
