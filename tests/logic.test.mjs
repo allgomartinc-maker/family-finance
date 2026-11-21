@@ -424,7 +424,8 @@ test('monthCash: leftover carries to next month, overspending carries as minus, 
   assert.deepEqual(aqrab, { opening: 2000, in: 0, out: 2500, loanIn: 0, loanOut: 7000, closing: -7500 });
   const qaws = monthCash(txns, LOANS, 'AFN', monthKey(QAWS));
   assert.equal(qaws.opening, -7500);
-  assert.equal(qaws.closing, -7500 - 2000 + 4000);
+  assert.equal(qaws.closing, -7500 + 4000);   // P2 was entered with an older date (noTime): history, not cash
+  assert.deepEqual(loanFlows(LOANS, 'AFN', true).map((x) => x.amount), [10000, 3000, 4000, 4000]);
   assert.equal(monthCash(txns, LOANS, 'USD', monthKey(AQRAB)).opening, 50);
 });
 

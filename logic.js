@@ -142,12 +142,13 @@ export function loansView(records, currency, onlyBy = null) {
 // ---------- loan book ----------
 // Loans move real cash: borrowing brings money in, paying it back sends it out; lending is the reverse.
 // Payments belong to their loan (currency, person, purpose); payments of a deleted loan are ignored.
-export function loanFlows(records, currency) {
+// cashOnly: skip entries made with an older picked date (noTime) — old debts are history, not today's cash.
+export function loanFlows(records, currency, cashOnly = false) {
   const loans = {};
   for (const r of records) if (r.kind === 'loan' && !r.deleted && r.currency === currency) loans[r.id] = r;
   const out = [];
   for (const r of records) {
-    if (r.deleted) continue;
+    if (r.deleted || (cashOnly && r.noTime)) continue;
     if (r.kind === 'loan' && loans[r.id]) out.push({ ts: r.ts, dir: r.dir === 'borrowed' ? 'in' : 'out', amount: r.amount, loan: r, pay: null });
     if (r.kind === 'pay' && loans[r.loanId]) {
       const l = loans[r.loanId];
@@ -167,7 +168,7 @@ export function monthCash(txns, loans, currency, month) {
     else if (k === month) r[isIn ? inKey : outKey] += amount;
   };
   for (const x of txns) if (!x.deleted && x.currency === currency) add(x.ts, x.type === 'in', x.amount, 'in', 'out');
-  for (const f of loanFlows(loans, currency)) add(f.ts, f.dir === 'in', f.amount, 'loanIn', 'loanOut');
+  for (const f of loanFlows(loans, currency, true)) add(f.ts, f.dir === 'in', f.amount, 'loanIn', 'loanOut');
   r.closing = r.opening + r.in + r.loanIn - r.out - r.loanOut;
   return r;
 }
