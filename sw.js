@@ -1,8 +1,8 @@
 // Offline cache. Bump VERSION on every deploy so phones pick up the new files.
-const VERSION = 'ff-v35';
+const VERSION = 'ff-v36';
 const FB = '13.1.0'; // keep in sync with FB_VERSION in sync.js
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'logic.js', 'store.js', 'data.js',
-  'config.js', 'sync.js', 'syncplan.js', 'clean.js', 'pin.js',
+  'config.js', 'sync.js', 'syncplan.js', 'clean.js', 'pin.js', 'login.js',
   'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
   'fonts/vazirmatn-arabic.woff2', 'fonts/vazirmatn-latin.woff2', 'fonts/lalezar-arabic.woff2', 'fonts/lalezar-latin.woff2',
   'img/meat.jpg', 'img/chicken.jpg', 'img/fish.jpg', 'img/rice.jpg', 'img/flour.jpg', 'img/bread.jpg', 'img/oil.jpg', 'img/beans.jpg', 'img/dal.jpg', 'img/potato.jpg', 'img/tomato.jpg', 'img/onion.jpg', 'img/garlic.jpg', 'img/carrot.jpg', 'img/cucumber.jpg', 'img/pepper.jpg', 'img/lemon.jpg', 'img/apple.jpg', 'img/banana.jpg', 'img/egg.jpg', 'img/milk.jpg', 'img/yogurt.jpg', 'img/cheese.jpg', 'img/tea.jpg', 'img/sugar.jpg', 'img/salt.jpg', 'img/soap.jpg', 'img/tissue.jpg', 'img/baby.jpg', 'img/u_sack.jpg', 'img/u_bottle.jpg', 'img/u_kg.jpg',

@@ -10,23 +10,38 @@ const FAM_KEY = 'ff-family';
 
 const rand = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
 
+// Firebase is loaded and signed in once per page; the login screen and the sync share it.
+let fbReady = null;
+function fb(config, emulator) {
+  fbReady ||= (async () => {
+    const [{ initializeApp }, A, F] = await Promise.all(FB_FILES.map((u) => import(u)));
+    const app = initializeApp(config);
+    const auth = A.getAuth(app);
+    if (emulator) A.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    const db = F.initializeFirestore(app, {
+      localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }),
+    });
+    if (emulator) F.connectFirestoreEmulator(db, '127.0.0.1', 8181);
+    await auth.authStateReady();
+    if (!auth.currentUser) await A.signInAnonymously(auth);
+    return { A, F, auth, db, uid: auth.currentUser.uid };
+  })();
+  return fbReady;
+}
+
+// Username + password login: read logins/{id} (its content is encrypted, see login.js). null if none.
+export async function getLogin({ config, emulator, id }) {
+  const { F, db } = await fb(config, emulator);
+  const d = await F.getDocFromServer(F.doc(db, `logins/${id}`));
+  return d.exists() ? d.data() : null;
+}
+
 export async function startSync({ config, emulator, getState, onRemote, onStatus }) {
   // What this phone had when sync started. Anything the family changes on this phone before the
   // first cloud snapshot arrives is the difference from this, and gets uploaded then.
   const startBase = (S) => Object.fromEntries(COLLS.map((c) => [c, snapshotOf(S[c] || [], c)]));
   let base = startBase(getState());
-  const [{ initializeApp }, A, F] = await Promise.all(FB_FILES.map((u) => import(u)));
-  const app = initializeApp(config);
-  const auth = A.getAuth(app);
-  if (emulator) A.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-  const db = F.initializeFirestore(app, {
-    localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }),
-  });
-  if (emulator) F.connectFirestoreEmulator(db, '127.0.0.1', 8181);
-
-  await auth.authStateReady();
-  if (!auth.currentUser) await A.signInAnonymously(auth);
-  const uid = auth.currentUser.uid;
+  const { F, db, uid } = await fb(config, emulator);
 
   let fam = JSON.parse(localStorage.getItem(FAM_KEY) || 'null');
   const join = location.hash.match(/^#join=([a-z0-9]+)\.([a-z0-9]+)$/);
@@ -119,5 +134,9 @@ export async function startSync({ config, emulator, getState, onRemote, onStatus
 
   const inviteLink = () => `${location.origin}${location.pathname}#join=${fam.fid}.${fam.code}`;
   const net = (on) => (on ? F.enableNetwork(db) : F.disableNetwork(db)); // used by emulator tests
-  return { push, getMedia, inviteLink, joined, uid, net };
+  // Logins for this family (admin makes them; the record holds only the family id in plain text).
+  const saveLogin = (id, doc) => F.setDoc(F.doc(db, `logins/${id}`), { ...doc, fid: fam.fid, ts: Date.now() });
+  const deleteLogin = (id) => F.deleteDoc(F.doc(db, `logins/${id}`));
+  const readLogin = (id) => getLogin({ config, emulator, id });
+  return { push, getMedia, inviteLink, joined, uid, net, saveLogin, deleteLogin, readLogin, familyId: fam.fid, joinCode: fam.code };
 }

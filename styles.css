@@ -397,3 +397,11 @@ button.mline { width: 100%; text-align: start; }
 .msub { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: var(--r-sm); background: var(--plaster); font-size: 14px; }
 .msub > span:first-child { white-space: nowrap; color: var(--soft); }
 .msub b { white-space: nowrap; font-size: 15px; }
+/* Username / password boxes and the credentials card */
+.field { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 4px 12px; font-size: 26px;
+  background: var(--card); border: 2px solid var(--line); border-radius: var(--r); }
+.field:focus-within { border-color: var(--saffron); }
+.field input { flex: 1; min-width: 0; border: 0; background: transparent; font: 600 20px var(--f-text); padding: 12px 4px; }
+.field input:focus { outline: none; }
+.cred { font: 700 17px var(--f-text); overflow-wrap: anywhere; margin: 2px 0 10px; }
+.cred-big { font-size: 28px; letter-spacing: 1px; color: var(--lapis-ink); }

@@ -8,6 +8,7 @@ import {
 import { firebaseConfig, emulator, emulatorConfig } from './config.js';
 import { cleanRecord, safeImage, safeAudio } from './clean.js';
 import { makePin, checkPin, PIN_LEN, PIN_KEYS } from './pin.js';
+import { newPassword, normUser, loginKeys, sealLogin, openLogin } from './login.js';
 
 let S;                                   // family state (IndexedDB)
 const V = { room: null, tab: 'money', cashOpen: { in: true }, month: null, modal: null, cloud: null, waiting: false };
@@ -16,6 +17,10 @@ const $app = document.getElementById('app');
 const $cam = document.getElementById('cam');
 
 // ---------- helpers ----------
+// A brand-new phone must not make its own empty family: it first asks "log in" or "new family".
+const CLOUD = emulator ? emulatorConfig : firebaseConfig;
+const hasFamily = () => { try { return !!localStorage.getItem('ff-family'); } catch { return false; } };
+const siteLink = () => `${location.origin}${location.pathname}`;
 function becomeMe(v) {
   unlockedUntil = 0; pocketOpen = false; P = null;
   S.me = v; localStorage.setItem('ff-me', v); V.modal = null;
@@ -403,6 +408,10 @@ function sheetTitle(M) {
     case 'setup': return 'خوش آمدید — شما کی هستید؟';
     case 'member': return M.self ? 'من کی هستم؟' : 'عضو نو';
     case 'who': return 'شما کی هستید؟';
+    case 'welcome': return 'خوش آمدید';
+    case 'login': return 'ورود — نام کاربری و رمز';
+    case 'mlogin': return 'ورود برای ' + (nm(M.memberId) || member(M.memberId)?.emoji || '');
+    case 'pinForgot': return 'رمز را فراموش کردم';
     case 'people': return 'اعضای فامیل';
     case 'pin': return (M.target === 'pocket' ? 'رمز جیب: ' : M.target === 'member' ? `رمز ${nm(M.memberId) || member(M.memberId)?.emoji || ''}: ` : 'رمز مدیر: ') + ({ set: 'رمز نو بسازید', confirm: 'دوباره بزنید', check: 'رمز را بزنید' }[M.mode]);
     case 'invite': return 'دعوت به فامیل';
@@ -456,16 +465,50 @@ function modalView() {
           <button data-a="mrole" data-v="admin" class="${M.role === 'admin' ? 'on' : ''}">👑<small>مدیر</small></button></div>`}
         <button class="save" data-a="msave" ${M.emoji || M.photo ? '' : 'disabled'}>✅ ثبت</button>`);
     }
+    case 'welcome':
+      return sheet('👋', `
+        <button class="save" data-a="loginStart">🔑 ورود — نام کاربری و رمز دارم</button>
+        <p class="lbl" style="text-align:center">مدیر فامیل برای شما نام کاربری و رمز می‌سازد</p>
+        <button class="save" style="background:#555" data-a="newFamily">🆕 فامیل نو می‌سازم — من مدیر هستم</button>`);
+    case 'login':
+    case 'pinForgot': {
+      const f = M.kind === 'login';
+      return sheet('🔑', `
+        <label class="field">👤<input id="${f ? 'luser' : 'fuser'}" placeholder="نام کاربری" autocomplete="username" autocapitalize="none" spellcheck="false" dir="auto"></label>
+        <label class="field">🔑<input id="${f ? 'lpass' : 'fpass'}" placeholder="رمز — مثلاً abcd-2345" autocomplete="current-password" autocapitalize="none" spellcheck="false" dir="ltr"></label>
+        ${M.err ? `<p class="out-c" style="text-align:center;font-weight:700">❗ ${esc(M.err)}</p>` : ''}
+        <button class="save" data-a="${f ? 'loginGo' : 'pinForgotGo'}" ${M.busy ? 'disabled' : ''}>${M.busy ? '⏳' : '✅ ' + (f ? 'ورود' : 'رمز نو بسازم')}</button>
+        ${f ? '' : '<p class="lbl" style="text-align:center">نام کاربری ندارید؟ از مدیر بخواهید: اعضای فامیل ← 🔒↩️ رمز نو</p>'}`);
+    }
+    case 'mlogin': {
+      const m = member(M.memberId);
+      if (M.pass) {
+        return sheet(`🔑 ${face(m, 'f40')}`, `<div class="stmt" style="text-align:center">
+            <div class="lbl">🔗 لینک</div><div class="cred" dir="ltr">${esc(siteLink())}</div>
+            <div class="lbl">👤 نام کاربری</div><div class="cred cred-big" dir="auto">${esc(M.user)}</div>
+            <div class="lbl">🔑 رمز</div><div class="cred cred-big" dir="ltr">${esc(M.pass)}</div></div>
+          <p class="lbl" style="text-align:center">رمز فقط همین حالا دیده می‌شود — همین حالا بفرستید</p>
+          <button class="save wa" data-a="mloginWa">💬 فرستادن به واتساپ</button>
+          <button class="save" style="background:#555" data-a="mloginCopy">📋 کاپی</button>`);
+      }
+      return sheet(`🔑 ${face(m, 'f40')}`, `
+        ${m?.loginUser ? `<p class="lbl" style="text-align:center">ورود فعلی: <b dir="auto">${esc(m.loginUser)}</b> — رمز نو، رمز کهنه را باطل می‌کند</p>` : ''}
+        <label class="field">👤<input id="muser" placeholder="نام کاربری — مثلاً ali" value="${esc(M.user || '')}" autocapitalize="none" spellcheck="false" dir="auto"></label>
+        <button class="save" data-a="mloginMake" ${M.busy ? 'disabled' : ''}>${M.busy ? '⏳' : '🔑 ساختن رمز ورود'}</button>
+        ${SY ? '' : '<p class="out-c" style="text-align:center">☁️❗ برای ساختن ورود انترنت لازم است</p>'}`);
+    }
     case 'who':
       return sheet('👤❓', `<div class="grid">${S.members.filter((m) => !m.deleted).map((m) => `
         <button class="tile ${m.id === S.me ? 'sel' : ''}" data-a="iam" data-v="${m.id}">
           <span class="badge">${ROLE_ICON[roleOf(m)]}</span>${face(m, 'f80')}<small>${esc(m.name)}</small></button>`).join('')}
-        <button class="tile add" data-a="newSelf"><span class="pic">➕</span><small>من نو هستم</small></button></div>`);
+        <button class="tile add" data-a="newSelf"><span class="pic">➕</span><small>من نو هستم</small></button></div>
+        ${CLOUD ? '<button class="save" style="background:var(--sel)" data-a="loginStart">🔑 ورود با نام کاربری و رمز</button>' : ''}`);
     case 'people':
       return sheet('👨‍👩‍👧', `<div class="list">${S.members.filter((m) => !m.deleted).map((m) => `
         <div class="item">${face(m, 'f56')}<span class="grow">${esc(m.name)}</span>
           <button class="round" data-a="${m.id === S.me ? 'noop' : 'roleCycle'}" data-v="${m.id}">${L(ROLE_ICON[roleOf(m)], ROLE_NAME[roleOf(m)])}</button>
           ${m.id === S.me ? '' : `<button class="round ${m.pin ? '' : 'warn'}" data-a="memberPin" data-v="${m.id}">${m.pin ? L('🔒↩️', 'رمز نو') : L('🔓', 'رمز بده')}</button>`}
+          <button class="round ${m.loginUser ? '' : 'warn'}" data-a="memberLogin" data-v="${m.id}">${L('🔑', m.loginUser ? 'ورود' : 'ورود بده')}</button>
           ${m.id === S.me ? '' : `<button class="round" data-a="rmMember" data-v="${m.id}">${L('🗑️', 'پاک')}</button>`}</div>`).join('')}</div>
         <button class="save" data-a="newMember">➕👤 عضو نو</button>
         ${SY ? '<button class="save" style="background:var(--sel)" data-a="invite">📲 دعوت با QR</button>' : ''}`);
@@ -478,7 +521,8 @@ function modalView() {
         <div class="keys pin">${PIN_KEYS.slice(0, 9).map((k, i) =>
           `<button data-a="pinTap" data-v="${i}" ${locked ? 'disabled' : ''}>${k}</button>`).join('')}
           <span></span><button data-a="pinTap" data-v="9" ${locked ? 'disabled' : ''}>${PIN_KEYS[9]}</button>
-          <button data-a="pinBack">⌫</button></div>`);
+          <button data-a="pinBack">⌫</button></div>
+        ${M.mode === 'check' && CLOUD ? '<button class="save" style="background:#555;margin-top:12px" data-a="pinForgot">🔑 رمز را فراموش کردم</button>' : ''}`);
     }
     case 'give':
       if (!M.to) {
@@ -721,7 +765,7 @@ function modalView() {
 
 let shownKind = null; // pop-up kind on screen right now
 function render() {
-  if (!S.members.length && !V.modal && !V.waiting) V.modal = { kind: 'setup' };
+  if (!S.members.length && !V.modal && !V.waiting) V.modal = { kind: CLOUD && !hasFamily() ? 'welcome' : 'setup' };
   if (S.members.length && !member(S.me) && !V.modal && !V.waiting) V.modal = { kind: 'who' };
   if (V.waiting && !S.members.length) { $app.innerHTML = '<div class="empty" style="opacity:1">☁️⏳</div>'; return; }
   if (!canTab(role(), V.tab)) V.tab = 'money';
@@ -902,9 +946,80 @@ const A = {
       V.modal = setup ? { kind: 'pin', mode: 'set', seq: [], run: null, required: true }
         : { kind: 'pin', target: 'member', memberId: m.id, mode: 'set', seq: [], required: true, back: M.self ? null : { kind: 'people' } };
     });
+    if (setup) connect();   // new family: now it can be made in the cloud
   },
 
   noop: () => {},
+
+  // ---------- username + password ----------
+  newFamily: () => { V.modal = { kind: 'setup' }; render(); },
+  loginStart: () => { V.modal = { kind: 'login', back: V.modal }; render(); },
+  loginGo: async () => {
+    const M = V.modal;
+    const user = document.getElementById('luser')?.value || '', pass = document.getElementById('lpass')?.value || '';
+    if (!user.trim() || !pass.trim()) { M.err = 'نام کاربری و رمز را بنویسید'; render(); return; }
+    M.busy = true; M.err = null; render();
+    try {
+      const { id } = await loginKeys(user, pass);
+      const { getLogin } = await import('./sync.js');
+      const p = await openLogin(user, pass, await getLogin({ config: CLOUD, emulator, id }));
+      if (!p) { Object.assign(M, { busy: false, err: 'نام کاربری یا رمز درست نیست' }); render(); return; }
+      // Join that family as that person. The page reloads and the normal join brings everything down.
+      localStorage.setItem('ff-me', p.memberId);
+      location.hash = `join=${p.fid}.${p.code}`;
+      location.reload();
+    } catch (e) {
+      console.error(e);
+      Object.assign(M, { busy: false, err: navigator.onLine ? 'مشکل — دوباره کوشش کنید' : 'انترنت نیست' }); render();
+    }
+  },
+  memberLogin: (v) => requireAdmin(() => {
+    const m = member(v);
+    V.modal = { kind: 'mlogin', memberId: v, user: m.loginUser || (/^[a-z0-9 ._-]+$/i.test(m.name || '') ? normUser(m.name) : '') };
+    render();
+  }),
+  mloginMake: async () => {
+    const M = V.modal, m = member(M.memberId);
+    const user = normUser(document.getElementById('muser')?.value);
+    if (!user) { toast('👤❓'); return; }
+    if (!SY) { toast('☁️❗'); return; }
+    M.busy = true; M.user = user; render();
+    try {
+      const pass = newPassword();
+      const { id, doc } = await sealLogin(user, pass, { fid: SY.familyId, code: SY.joinCode, memberId: m.id });
+      await SY.saveLogin(id, doc);
+      if (m.loginId && m.loginId !== id) SY.deleteLogin(m.loginId).catch(() => {});   // old password stops working
+      await commit(() => { m.loginUser = user; m.loginId = id; log('login', '🔑', m.name || user); });
+      Object.assign(M, { busy: false, pass });
+      render();
+    } catch (e) {
+      console.error(e);
+      M.busy = false; render(); toast('☁️❗');
+    }
+  },
+  mloginWa: () => { const M = V.modal; sendWhatsApp(`🏠 حساب خانواده\n\n🔗 ${siteLink()}\n👤 نام کاربری: ${M.user}\n🔑 رمز: ${M.pass}\n\nلینک را باز کنید ← 🔑 ورود`); },
+  mloginCopy: async () => { const M = V.modal; try { await navigator.clipboard.writeText(`${siteLink()}\n${M.user}\n${M.pass}`); toast('📋✅'); } catch { toast('📋❌'); } },
+  pinForgot: () => { V.modal = { kind: 'pinForgot', back: V.modal }; render(); },
+  pinForgotGo: async () => {
+    const M = V.modal, B = M.back;
+    const user = document.getElementById('fuser')?.value || '', pass = document.getElementById('fpass')?.value || '';
+    if (!user.trim() || !pass.trim()) { M.err = 'نام کاربری و رمز را بنویسید'; render(); return; }
+    if (!SY) { M.err = 'انترنت لازم است'; render(); return; }
+    M.busy = true; M.err = null; render();
+    try {
+      const { id } = await loginKeys(user, pass);
+      const p = await openLogin(user, pass, await SY.readLogin(id));
+      const owner = B.target === 'pocket' ? S.me : pinOwner(B)?.id;
+      if (!p || p.fid !== SY.familyId || p.memberId !== owner) { Object.assign(M, { busy: false, err: 'نام کاربری یا رمز درست نیست' }); render(); return; }
+      log('pinReset', '🔑🔒', member(owner)?.name || '');
+      pinFails = 0; pinLockUntil = 0;
+      V.modal = { ...B, mode: 'set', seq: [], first: null, shake: false, busy: false };   // proved who they are → make a new PIN
+      render();
+    } catch (e) {
+      console.error(e);
+      Object.assign(M, { busy: false, err: 'مشکل — دوباره کوشش کنید' }); render();
+    }
+  },
   pocket: async () => {
     if (!P || P.owner !== S.me) { P = await loadPocket(S.me); P.owner = S.me; }
     if (pocketOpen) V.modal = { kind: 'pocket' };
@@ -1236,6 +1351,7 @@ const COLL_SORT = {
 async function connect() {
   if (!cfg || SY) return;
   const joining = location.hash.startsWith('#join=');
+  if (!joining && !hasFamily() && !S.members.length) return;   // brand-new phone: wait for "log in" or "new family"
   if (joining) { S = { ...S, members: [], grocery: [], txns: [], bills: [], log: [], catalog: [], cash: [], loans: [], jars: [], contacts: [], cats: [] }; V.waiting = true; V.modal = null; render(); }
   try {
     SY = await startSyncLazy();
